@@ -38,6 +38,13 @@ export default function VentasPage() {
   const [isSuccessModalOpen, setIsSuccessModalOpen] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
+  // Helper para diferir notificaciones fuera del ciclo de renderizado de React
+  const safeToast = (options: Parameters<typeof toast>[0]) => {
+    setTimeout(() => {
+      toast(options);
+    }, 0);
+  };
+
   const loadProducts = async () => {
     setIsLoading(true);
     const data = await getProducts();
@@ -56,9 +63,9 @@ export default function VentasPage() {
     const currentQtyInCart = existingItem ? existingItem.quantity : 0;
 
     if (!product.is_service && currentQtyInCart >= product.stock) {
-      toast({
+      safeToast({
         title: "Límite de stock",
-        description: `No hay más stock de "${product.name}".`,
+        description: `No hay más stock disponible de "${product.name}".`,
         type: "warning",
       });
       return false;
@@ -88,7 +95,6 @@ export default function VentasPage() {
     return true;
   };
 
-  // Restaurado: Función de Servicios Rápidos
   const addServiceItem = (name: string, price: number, serviceCode: string) => {
     const serviceVariantId = `srv-${serviceCode.toLowerCase()}`;
     setCart((prev) => {
@@ -109,7 +115,8 @@ export default function VentasPage() {
         },
       ];
     });
-    toast({
+
+    safeToast({
       title: "Servicio Agregado",
       description: `${name} agregado al ticket.`,
       type: "success",
@@ -117,15 +124,23 @@ export default function VentasPage() {
   };
 
   const updateQuantity = (variant_id: string, delta: number) => {
+    const targetItem = cart.find((item) => item.variant_id === variant_id);
+    if (!targetItem) return;
+
+    if (delta > 0 && !targetItem.is_service && targetItem.quantity + delta > targetItem.stock) {
+      safeToast({
+        title: "Stock máximo",
+        description: `Solo hay ${targetItem.stock} unidades de "${targetItem.name}".`,
+        type: "warning",
+      });
+      return;
+    }
+
     setCart((prev) =>
       prev
         .map((item) => {
           if (item.variant_id === variant_id) {
             const newQty = item.quantity + delta;
-            if (delta > 0 && !item.is_service && newQty > item.stock) {
-              toast({ title: "Stock máximo", description: `Solo hay ${item.stock} unidades.`, type: "warning" });
-              return item;
-            }
             return newQty > 0 ? { ...item, quantity: newQty } : null;
           }
           return item;
@@ -140,10 +155,9 @@ export default function VentasPage() {
 
   const totalAmount = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
 
-const handleCheckout = async () => {
+  const handleCheckout = async () => {
     if (cart.length === 0) return;
-    setIsProcessing(true); // Bloquea el botón
-
+    setIsProcessing(true);
     try {
       const refDoc = `POS-${Date.now().toString().slice(-6)}`;
       const checkoutItems = cart.map((i) => ({
@@ -154,35 +168,30 @@ const handleCheckout = async () => {
         quantity: i.quantity,
         is_service: i.is_service,
       }));
-
       const res = await processPOSSale(checkoutItems, refDoc, paymentMethod, totalAmount);
-
       if (!res.success) {
-        toast({
+        safeToast({
           title: "Error al registrar la venta",
           description: res.error || "La base de datos rechazó la transacción.",
           type: "error",
         });
-        return; // Sale sin limpiar el carrito para no perder los datos
+        return;
       }
-
-      toast({
+      safeToast({
         title: "Venta Exitosa",
         description: `Transacción procesada correctamente.`,
         type: "success",
       });
-
       setIsSuccessModalOpen(true);
-      setCart([]); // Limpia el carrito
-      loadProducts(); // Actualiza el stock visualmente
+      setCart([]);
+      loadProducts();
     } catch (error: any) {
-      toast({
+      safeToast({
         title: "Error Crítico",
         description: error?.message || "Fallo inesperado al comunicarse con el servidor.",
         type: "error",
       });
     } finally {
-      // Garantiza que el botón SIEMPRE se desbloquee, pase lo que pase
       setIsProcessing(false);
     }
   };
@@ -206,11 +215,8 @@ const handleCheckout = async () => {
           Facturación rápida en mesón, control de servicios y rebaja de stock en tiempo real.
         </p>
       </div>
-
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         <div className="lg:col-span-7 flex flex-col gap-4">
-          
-          {/* Restaurado: Botones de Servicios */}
           <div className="flex flex-wrap items-center gap-2">
             <Button variant="outline" size="sm" className="border-border bg-card hover:bg-muted font-medium text-xs" onClick={() => addServiceItem("Mano de Obra: Cambio de Aceite", 15000, "SRV-ACEITE")}>
               <Wrench className="mr-1.5 h-3.5 w-3.5 text-primary" /> + Cambio de Aceite ($15.000)
@@ -219,7 +225,6 @@ const handleCheckout = async () => {
               <Wrench className="mr-1.5 h-3.5 w-3.5 text-primary" /> + Cambio de Pastillas ($20.000)
             </Button>
           </div>
-
           <div className="relative">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -235,7 +240,6 @@ const handleCheckout = async () => {
               <span>Escáner Activo</span>
             </div>
           </div>
-
           <div className="rounded-xl border border-border bg-background/50 overflow-hidden">
             <Table>
               <TableHeader className="bg-muted/50">
@@ -266,9 +270,9 @@ const handleCheckout = async () => {
                       </TableCell>
                       <TableCell className="text-right font-semibold">${product.price.toLocaleString("es-CL")}</TableCell>
                       <TableCell className="text-right font-bold text-muted-foreground">
-                         <span className={isOutOfStock ? "text-muted-foreground/50 line-through" : product.stock <= product.min_stock ? "text-red-500" : ""}>
-                           {product.stock} un.
-                         </span>
+                        <span className={isOutOfStock ? "text-muted-foreground/50 line-through" : product.stock <= product.min_stock ? "text-red-500" : ""}>
+                          {product.stock} un.
+                        </span>
                       </TableCell>
                       <TableCell className="text-center">
                         <Button size="sm" disabled={isOutOfStock} onClick={() => addProductToCart(product)}>
@@ -282,7 +286,6 @@ const handleCheckout = async () => {
             </Table>
           </div>
         </div>
-
         <div className="lg:col-span-5 flex flex-col rounded-xl border border-border bg-card p-6 shadow-sm sticky top-6">
           <div className="flex items-center justify-between pb-4 border-b border-border">
             <div className="flex items-center gap-2">
@@ -293,11 +296,10 @@ const handleCheckout = async () => {
               {cart.reduce((acc, item) => acc + item.quantity, 0)} ítems
             </span>
           </div>
-
           <div className="flex flex-col gap-3 py-4 max-h-[300px] overflow-y-auto divide-y divide-border/50">
             {cart.length === 0 ? (
               <div className="py-12 text-center text-muted-foreground text-sm">
-                 La caja está libre. Agrega repuestos o servicios para comenzar.
+                La caja está libre. Agrega repuestos o servicios para comenzar.
               </div>
             ) : cart.map((item) => (
               <div key={item.variant_id} className="pt-3 first:pt-0 flex items-center justify-between gap-2">
@@ -317,8 +319,6 @@ const handleCheckout = async () => {
               </div>
             ))}
           </div>
-
-          {/* Restaurado: Opciones de Pago */}
           <div className="flex flex-col gap-2 py-3 border-t border-border">
             <span className="text-xs font-medium text-muted-foreground">Método de Pago:</span>
             <div className="grid grid-cols-3 gap-2">
@@ -329,7 +329,6 @@ const handleCheckout = async () => {
               ))}
             </div>
           </div>
-
           <div className="pt-4 border-t border-border flex flex-col gap-4">
             <div className="flex justify-between text-xl font-bold">
               <span>Total a Cobrar:</span>
@@ -346,7 +345,6 @@ const handleCheckout = async () => {
           </div>
         </div>
       </div>
-
       {isSuccessModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs">
           <div className="bg-card border border-border rounded-xl p-6 max-w-sm w-full text-center">
