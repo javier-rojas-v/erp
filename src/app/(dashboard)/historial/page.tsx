@@ -25,52 +25,22 @@ import {
   Play,
   RotateCcw,
   AlertCircle,
-  CheckCircle2
+  CheckCircle2,
 } from "lucide-react";
 
 interface SaleRecord {
   id: string;              // ID Venta (ej. VEN-1042)
   date: string;
   total: number;
-  paymentMethod: 'Efectivo' | 'Transferencia' | 'Tarjeta';
+  paymentMethod: "Efectivo" | "Transferencia" | "Tarjeta";
   itemsCount: number;
   cashier: string;
-  status: 'COMPLETED' | 'ANNULLED'; // Estado de la transacción
+  status: "COMPLETED" | "ANNULLED"; // Estado de la transacción
   annulmentRef?: string;          // reference_document del movimiento compensatorio (ADJUSTMENT_IN)
 }
 
 export default function HistorialCajaPage() {
-  const [salesHistory, setSalesHistory] = useState<SaleRecord[]>([
-    {
-      id: "VEN-1042",
-      date: "Hoy, 16:45",
-      total: 36500,
-      paymentMethod: "Efectivo",
-      itemsCount: 2,
-      cashier: "Javier R.",
-      status: "COMPLETED",
-    },
-    {
-      id: "VEN-1041",
-      date: "Hoy, 15:20",
-      total: 15000,
-      paymentMethod: "Transferencia",
-      itemsCount: 1,
-      cashier: "Javier R.",
-      status: "COMPLETED",
-    },
-    {
-      id: "VEN-1040",
-      date: "Hoy, 11:10",
-      total: 64000,
-      paymentMethod: "Tarjeta",
-      itemsCount: 3,
-      cashier: "Javier R.",
-      status: "ANNULLED",
-      annulmentRef: "ADJ-VEN-1040",
-    },
-  ]);
-
+  const [salesHistory, setSalesHistory] = useState<SaleRecord[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [isClosingModalOpen, setIsClosingModalOpen] = useState(false);
   const [cashCounted, setCashCounted] = useState<string>("");
@@ -98,15 +68,19 @@ export default function HistorialCajaPage() {
     (sale) =>
       sale.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
       sale.paymentMethod.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (sale.annulmentRef && sale.annulmentRef.toLowerCase().includes(searchQuery.toLowerCase()))
+      (sale.annulmentRef &&
+        sale.annulmentRef.toLowerCase().includes(searchQuery.toLowerCase()))
   );
 
-  // 1. Cierre de Caja y registro de monto_final_real vs monto_final_sistema
   const handleCloseRegister = (e: React.FormEvent) => {
     e.preventDefault();
     const realAmount = parseFloat(cashCounted);
     if (isNaN(realAmount) || realAmount < 0) {
-      toast({ title: "Monto inválido", description: "Ingresa un número válido para el conteo físico.", type: "warning" });
+      toast({
+        title: "Monto inválido",
+        description: "Ingresa un número válido para el conteo físico.",
+        type: "warning",
+      });
       return;
     }
 
@@ -123,9 +97,12 @@ export default function HistorialCajaPage() {
 
     toast({
       title: "Caja Cerrada",
-      description: diff === 0
-        ? "Cierre guardado. Caja totalmente cuadrada."
-        : `Cierre guardado con auditación de descuadre ($${diff.toLocaleString("es-CL")}).`,
+      description:
+        diff === 0
+          ? "Cierre guardado. Caja totalmente cuadrada."
+          : `Cierre guardado con auditación de descuadre ($${diff.toLocaleString(
+              "es-CL"
+            )}).`,
       type: diff === 0 ? "success" : "warning",
     });
   };
@@ -136,7 +113,6 @@ export default function HistorialCajaPage() {
     setClosedSessionSummary(null);
   };
 
-  // 2. Anulación compensatoria de venta (Cumpliendo restricción RLS de no borrar filas)
   const handleAnnulSale = (saleId: string) => {
     const target = salesHistory.find((s) => s.id === saleId);
     if (!target) return;
@@ -164,7 +140,9 @@ export default function HistorialCajaPage() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <div className="flex items-center gap-3">
-            <h1 className="text-3xl font-bold tracking-tight">Historial y Cierre de Caja</h1>
+            <h1 className="text-3xl font-bold tracking-tight">
+              Historial y Cierre de Caja
+            </h1>
             <span
               className={`inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full border ${
                 isRegisterClosed
@@ -172,7 +150,11 @@ export default function HistorialCajaPage() {
                   : "bg-emerald-500/10 text-emerald-500 border-emerald-500/20"
               }`}
             >
-              {isRegisterClosed ? <Lock className="h-3 w-3" /> : <Unlock className="h-3 w-3" />}
+              {isRegisterClosed ? (
+                <Lock className="h-3 w-3" />
+              ) : (
+                <Unlock className="h-3 w-3" />
+              )}
               {isRegisterClosed ? "Caja Cerrada" : "Caja Abierta (Turno Activo)"}
             </span>
           </div>
@@ -205,29 +187,51 @@ export default function HistorialCajaPage() {
         </div>
       </div>
 
-      {/* Alerta de Sesión Cerrada y Auditoría */}
+      {/* Alerta de Auditoría */}
       {closedSessionSummary && (
         <div className="p-4 rounded-xl border border-border bg-card shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className={`p-2 rounded-lg ${closedSessionSummary.diferencia === 0 ? "bg-emerald-500/10 text-emerald-500" : "bg-amber-500/10 text-amber-500"}`}>
-              {closedSessionSummary.diferencia === 0 ? <CheckCircle2 className="h-6 w-6" /> : <AlertCircle className="h-6 w-6" />}
+            <div
+              className={`p-2 rounded-lg ${
+                closedSessionSummary.diferencia === 0
+                  ? "bg-emerald-500/10 text-emerald-500"
+                  : "bg-amber-500/10 text-amber-500"
+              }`}
+            >
+              {closedSessionSummary.diferencia === 0 ? (
+                <CheckCircle2 className="h-6 w-6" />
+              ) : (
+                <AlertCircle className="h-6 w-6" />
+              )}
             </div>
             <div>
-              <h4 className="font-bold text-sm">Resumen Auditoría de Cierre Anterior</h4>
+              <h4 className="font-bold text-sm">
+                Resumen Auditoría de Cierre Anterior
+              </h4>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Esperado: <span className="font-mono font-semibold text-foreground">${closedSessionSummary.monto_final_sistema.toLocaleString("es-CL")}</span> | 
-                Físico: <span className="font-mono font-semibold text-foreground">${closedSessionSummary.monto_final_real.toLocaleString("es-CL")}</span>
+                Esperado:{" "}
+                <span className="font-mono font-semibold text-foreground">
+                  ${closedSessionSummary.monto_final_sistema.toLocaleString("es-CL")}
+                </span>{" "}
+                | Físico:{" "}
+                <span className="font-mono font-semibold text-foreground">
+                  ${closedSessionSummary.monto_final_real.toLocaleString("es-CL")}
+                </span>
               </p>
             </div>
           </div>
-          <span className={`text-xs font-bold px-3 py-1 rounded-full border ${
-            closedSessionSummary.diferencia === 0
-              ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20"
-              : "bg-amber-500/10 text-amber-500 border-amber-500/20"
-          }`}>
+          <span
+            className={`text-xs font-bold px-3 py-1 rounded-full border ${
+              closedSessionSummary.diferencia === 0
+                ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20"
+                : "bg-amber-500/10 text-amber-500 border-amber-500/20"
+            }`}
+          >
             {closedSessionSummary.diferencia === 0
               ? "Cuadrado Sin Diferencias"
-              : `Descuadre Registrado: $${closedSessionSummary.diferencia.toLocaleString("es-CL")}`}
+              : `Descuadre Registrado: $${closedSessionSummary.diferencia.toLocaleString(
+                  "es-CL"
+                )}`}
           </span>
         </div>
       )}
@@ -240,8 +244,12 @@ export default function HistorialCajaPage() {
             <Receipt className="h-4 w-4 text-primary" />
           </div>
           <div className="mt-3">
-            <div className="text-2xl font-bold tabular-nums">${totalGeneral.toLocaleString("es-CL")}</div>
-            <p className="text-xs text-muted-foreground mt-0.5">Solo ventas activas (COMPLETED)</p>
+            <div className="text-2xl font-bold tabular-nums">
+              ${totalGeneral.toLocaleString("es-CL")}
+            </div>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Solo ventas activas (COMPLETED)
+            </p>
           </div>
         </div>
 
@@ -251,8 +259,12 @@ export default function HistorialCajaPage() {
             <DollarSign className="h-4 w-4 text-emerald-500" />
           </div>
           <div className="mt-3">
-            <div className="text-2xl font-bold tabular-nums">${totalEfectivo.toLocaleString("es-CL")}</div>
-            <p className="text-xs text-muted-foreground mt-0.5">Esperado en cajón físico</p>
+            <div className="text-2xl font-bold tabular-nums">
+              ${totalEfectivo.toLocaleString("es-CL")}
+            </div>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Esperado en cajón físico
+            </p>
           </div>
         </div>
 
@@ -262,8 +274,12 @@ export default function HistorialCajaPage() {
             <ArrowLeftRight className="h-4 w-4 text-blue-500" />
           </div>
           <div className="mt-3">
-            <div className="text-2xl font-bold tabular-nums">${totalTransferencia.toLocaleString("es-CL")}</div>
-            <p className="text-xs text-muted-foreground mt-0.5">Comprobante bancario</p>
+            <div className="text-2xl font-bold tabular-nums">
+              ${totalTransferencia.toLocaleString("es-CL")}
+            </div>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Comprobante bancario
+            </p>
           </div>
         </div>
 
@@ -273,16 +289,22 @@ export default function HistorialCajaPage() {
             <CreditCard className="h-4 w-4 text-purple-500" />
           </div>
           <div className="mt-3">
-            <div className="text-2xl font-bold tabular-nums">${totalTarjeta.toLocaleString("es-CL")}</div>
-            <p className="text-xs text-muted-foreground mt-0.5">Ventas con tarjeta crédito/débito</p>
+            <div className="text-2xl font-bold tabular-nums">
+              ${totalTarjeta.toLocaleString("es-CL")}
+            </div>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Ventas con tarjeta crédito/débito
+            </p>
           </div>
         </div>
       </div>
 
-      {/* Bitácora de Transacciones con Indicador de Anulados */}
+      {/* Bitácora de Transacciones */}
       <div className="flex flex-col gap-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <h2 className="text-xl font-semibold tracking-tight">Bitácora de Transacciones</h2>
+          <h2 className="text-xl font-semibold tracking-tight">
+            Bitácora de Transacciones
+          </h2>
           <div className="relative w-full sm:w-72">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -305,7 +327,9 @@ export default function HistorialCajaPage() {
                 <TableHead className="font-semibold">Cajero</TableHead>
                 <TableHead className="text-right font-semibold">Ítems</TableHead>
                 <TableHead className="text-right font-semibold">Total</TableHead>
-                <TableHead className="text-center font-semibold">Acciones / Estado</TableHead>
+                <TableHead className="text-center font-semibold">
+                  Acciones / Estado
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -323,11 +347,17 @@ export default function HistorialCajaPage() {
                     <TableRow
                       key={sale.id}
                       className={`border-border transition-colors ${
-                        isAnnulled ? "bg-destructive/5 hover:bg-destructive/10" : "hover:bg-muted/30"
+                        isAnnulled
+                          ? "bg-destructive/5 hover:bg-destructive/10"
+                          : "hover:bg-muted/30"
                       }`}
                     >
                       <TableCell>
-                        <span className={`font-mono font-medium ${isAnnulled ? "line-through text-muted-foreground" : "text-foreground"}`}>
+                        <span
+                          className={`font-mono font-medium ${
+                            isAnnulled ? "line-through text-muted-foreground" : "text-foreground"
+                          }`}
+                        >
                           {sale.id}
                         </span>
                         {isAnnulled && sale.annulmentRef && (
@@ -336,7 +366,11 @@ export default function HistorialCajaPage() {
                           </div>
                         )}
                       </TableCell>
-                      <TableCell className={`text-muted-foreground flex items-center gap-1.5 pt-4 text-xs ${isAnnulled ? "line-through" : ""}`}>
+                      <TableCell
+                        className={`text-muted-foreground flex items-center gap-1.5 pt-4 text-xs ${
+                          isAnnulled ? "line-through" : ""
+                        }`}
+                      >
                         <Calendar className="h-3.5 w-3.5" /> {sale.date}
                       </TableCell>
                       <TableCell>
@@ -344,13 +378,25 @@ export default function HistorialCajaPage() {
                           {sale.paymentMethod}
                         </span>
                       </TableCell>
-                      <TableCell className={`text-sm ${isAnnulled ? "line-through text-muted-foreground" : ""}`}>
+                      <TableCell
+                        className={`text-sm ${
+                          isAnnulled ? "line-through text-muted-foreground" : ""
+                        }`}
+                      >
                         {sale.cashier}
                       </TableCell>
-                      <TableCell className={`text-right tabular-nums ${isAnnulled ? "line-through text-muted-foreground" : ""}`}>
+                      <TableCell
+                        className={`text-right tabular-nums ${
+                          isAnnulled ? "line-through text-muted-foreground" : ""
+                        }`}
+                      >
                         {sale.itemsCount} un.
                       </TableCell>
-                      <TableCell className={`text-right tabular-nums font-semibold ${isAnnulled ? "line-through text-muted-foreground" : ""}`}>
+                      <TableCell
+                        className={`text-right tabular-nums font-semibold ${
+                          isAnnulled ? "line-through text-muted-foreground" : ""
+                        }`}
+                      >
                         ${sale.total.toLocaleString("es-CL")}
                       </TableCell>
                       <TableCell className="text-center">
@@ -380,7 +426,7 @@ export default function HistorialCajaPage() {
         </div>
       </div>
 
-      {/* Modal Arqueo de Caja Diario */}
+      {/* Modal Arqueo de Caja */}
       {isClosingModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4">
           <div className="bg-card border border-border rounded-xl p-6 max-w-md w-full shadow-2xl flex flex-col gap-4 animate-in zoom-in-95 duration-150">
@@ -399,21 +445,29 @@ export default function HistorialCajaPage() {
 
             <form onSubmit={handleCloseRegister} className="flex flex-col gap-4">
               <div className="flex flex-col gap-1.5">
-                <span className="text-xs font-medium text-muted-foreground">Resumen del Sistema (`cash_sessions`):</span>
+                <span className="text-xs font-medium text-muted-foreground">
+                  Resumen del Sistema (`cash_sessions`):
+                </span>
                 <div className="p-3 rounded-lg bg-muted/40 border border-border flex flex-col gap-1 text-sm">
                   <div className="flex justify-between">
                     <span>Efectivo Esperado (`monto_final_sistema`):</span>
-                    <span className="font-mono font-semibold">${totalEfectivo.toLocaleString("es-CL")}</span>
+                    <span className="font-mono font-semibold">
+                      ${totalEfectivo.toLocaleString("es-CL")}
+                    </span>
                   </div>
                   <div className="flex justify-between text-muted-foreground text-xs">
                     <span>Transferencias + Tarjetas:</span>
-                    <span className="font-mono">${(totalTransferencia + totalTarjeta).toLocaleString("es-CL")}</span>
+                    <span className="font-mono">
+                      ${(totalTransferencia + totalTarjeta).toLocaleString("es-CL")}
+                    </span>
                   </div>
                 </div>
               </div>
 
               <div className="flex flex-col gap-2">
-                <label className="text-sm font-medium">Conteo Físico de Efectivo ($) (`monto_final_real`)</label>
+                <label className="text-sm font-medium">
+                  Conteo Físico de Efectivo ($) (`monto_final_real`)
+                </label>
                 <Input
                   type="number"
                   placeholder="Ej: 36500"
@@ -435,7 +489,9 @@ export default function HistorialCajaPage() {
                   <span>
                     {parseFloat(cashCounted) === totalEfectivo
                       ? "Caja cuadrada sin diferencias."
-                      : `Diferencia a registrar en BD: $${(parseFloat(cashCounted) - totalEfectivo).toLocaleString("es-CL")}`}
+                      : `Diferencia a registrar en BD: $${(
+                          parseFloat(cashCounted) - totalEfectivo
+                        ).toLocaleString("es-CL")}`}
                   </span>
                 </div>
               )}
