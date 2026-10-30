@@ -7,28 +7,28 @@ export type ProductCategory =
   | 'Accesorios e Iluminación';
 
 export interface Product {
-  id: string;                     // UUID de la ficha de producto
-  variant_id: string;             // UUID de la variante vendible
-  sku: string;                    // Código interno
-  part_number_factory: string;    // Número de parte fabricante (OEM)
-  barcode?: string;               // Código de barras (EAN13/UPC)
-  name: string;                   // Nombre descriptivo
-  category: ProductCategory;      // Categoría
-  brand: string;                  // Marca
-  price: number;                  // Precio de venta público ($)
-  stock: number;                  // current_stock
-  min_stock: number;              // Umbral de stock crítico
-  is_service?: boolean;           // Flag Opción A: Exento de control de inventario
+  id: string;
+  variant_id?: string;
+  sku: string;
+  part_number_factory?: string | null;
+  barcode?: string | null;
+  name: string;
+  category: ProductCategory | string;
+  brand: string;
+  price: number;
+  stock: number;
+  min_stock: number;
+  is_service?: boolean;
   created_at?: string;
 }
 
 export interface CartItem {
-  variant_id: string;             // ID único de la variante o servicio
+  variant_id: string;
   product_id?: string;
   sku: string;
   name: string;
-  price: number;                  // Precio congelado al momento de agregar
+  price: number;
   quantity: number;
-  stock: number;                  // Límite máximo de stock retornado por la BD
-  is_service: boolean;            // Flag para omitir restricción de stock
+  stock: number;
+  is_service: boolean;
 }

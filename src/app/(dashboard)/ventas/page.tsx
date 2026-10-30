@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useMemo } from "react";
 import { getProducts } from "@/lib/api/products";
+import { processPOSSale } from "@/lib/api/transactions";
 import { Product, CartItem } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,61 +22,33 @@ import {
   Minus,
   Trash2,
   CheckCircle2,
-  Wrench,
   Tag,
   Barcode,
   Loader2,
+  Wrench
 } from "lucide-react";
 
 export default function VentasPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [cart, setCart] = useState<CartItem[]>([]);
-  const [paymentMethod, setPaymentMethod] = useState<
-    "Efectivo" | "Transferencia" | "Tarjeta"
-  >("Efectivo");
+  const [paymentMethod, setPaymentMethod] = useState<"Efectivo" | "Transferencia" | "Tarjeta">("Efectivo");
   const [isLoading, setIsLoading] = useState(true);
+  const [isProcessing, setIsProcessing] = useState(false);
   const [isSuccessModalOpen, setIsSuccessModalOpen] = useState(false);
-
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  // Carga dinámica desde Supabase
-  useEffect(() => {
-    let active = true;
-    getProducts()
-      .then((data) => {
-        if (active) setProducts(data);
-      })
-      .catch((error) => console.error("Error cargando catálogo desde Supabase:", error))
-      .finally(() => {
-        if (active) setIsLoading(false);
-      });
+  const loadProducts = async () => {
+    setIsLoading(true);
+    const data = await getProducts();
+    setProducts(data);
+    setIsLoading(false);
+  };
 
-    return () => {
-      active = false;
-    };
+  useEffect(() => {
+    loadProducts();
+    if (searchInputRef.current) searchInputRef.current.focus();
   }, []);
-
-  useEffect(() => {
-    if (searchInputRef.current && !isLoading) {
-      searchInputRef.current.focus();
-    }
-  }, [isLoading]);
-
-  const filteredProducts = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    if (!q) return products;
-
-    return products.filter((product) => {
-      const matchName = product.name.toLowerCase().includes(q);
-      const matchSku = product.sku.toLowerCase().includes(q);
-      const matchOem = product.part_number_factory?.toLowerCase().includes(q);
-      const matchBrand = product.brand.toLowerCase().includes(q);
-      const matchBarcode = product.barcode?.toLowerCase().includes(q);
-
-      return matchName || matchSku || matchOem || matchBrand || matchBarcode;
-    });
-  }, [products, searchQuery]);
 
   const addProductToCart = (product: Product): boolean => {
     const targetVariantId = product.variant_id || product.id;
@@ -84,8 +57,8 @@ export default function VentasPage() {
 
     if (!product.is_service && currentQtyInCart >= product.stock) {
       toast({
-        title: "Límite de stock alcanzado",
-        description: `No hay más stock disponible de "${product.name}". (Disponible: ${product.stock} un.)`,
+        title: "Límite de stock",
+        description: `No hay más stock de "${product.name}".`,
         type: "warning",
       });
       return false;
@@ -98,7 +71,6 @@ export default function VentasPage() {
           idx === index ? { ...item, quantity: item.quantity + 1 } : item
         );
       }
-
       return [
         ...prev,
         {
@@ -113,23 +85,17 @@ export default function VentasPage() {
         },
       ];
     });
-
     return true;
   };
 
+  // Restaurado: Función de Servicios Rápidos
   const addServiceItem = (name: string, price: number, serviceCode: string) => {
     const serviceVariantId = `srv-${serviceCode.toLowerCase()}`;
-
     setCart((prev) => {
       const existing = prev.find((item) => item.variant_id === serviceVariantId);
       if (existing) {
-        return prev.map((item) =>
-          item.variant_id === serviceVariantId
-            ? { ...item, quantity: item.quantity + 1 }
-            : item
-        );
+        return prev.map((item) => item.variant_id === serviceVariantId ? { ...item, quantity: item.quantity + 1 } : item);
       }
-
       return [
         ...prev,
         {
@@ -143,53 +109,11 @@ export default function VentasPage() {
         },
       ];
     });
-
     toast({
       title: "Servicio Agregado",
-      description: `${name} ($${price.toLocaleString("es-CL")}) agregado al ticket.`,
+      description: `${name} agregado al ticket.`,
       type: "success",
     });
-  };
-
-  const handleKeyDownSearch = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      const term = searchQuery.trim().toLowerCase();
-      if (!term) return;
-
-      const exactMatches = products.filter(
-        (p) =>
-          (p.barcode && p.barcode.toLowerCase() === term) ||
-          p.sku.toLowerCase() === term ||
-          (p.part_number_factory &&
-            p.part_number_factory.toLowerCase() === term)
-      );
-
-      if (exactMatches.length === 1) {
-        const productToAdd = exactMatches[0];
-        const added = addProductToCart(productToAdd);
-        if (added) {
-          toast({
-            title: "Producto Escaneado",
-            description: `Se agregó ${productToAdd.name} al ticket.`,
-            type: "success",
-          });
-          setSearchQuery("");
-        }
-      } else if (filteredProducts.length === 1) {
-        const productToAdd = filteredProducts[0];
-        const added = addProductToCart(productToAdd);
-        if (added) {
-          setSearchQuery("");
-        }
-      } else if (exactMatches.length === 0 && filteredProducts.length === 0) {
-        toast({
-          title: "Producto no encontrado",
-          description: `No existe ningún repuesto con el código o código de barras: "${searchQuery}".`,
-          type: "error",
-        });
-      }
-    }
   };
 
   const updateQuantity = (variant_id: string, delta: number) => {
@@ -198,16 +122,10 @@ export default function VentasPage() {
         .map((item) => {
           if (item.variant_id === variant_id) {
             const newQty = item.quantity + delta;
-
             if (delta > 0 && !item.is_service && newQty > item.stock) {
-              toast({
-                title: "Stock máximo alcanzado",
-                description: `No puedes agregar más de ${item.stock} unidades disponibles de este repuesto.`,
-                type: "warning",
-              });
+              toast({ title: "Stock máximo", description: `Solo hay ${item.stock} unidades.`, type: "warning" });
               return item;
             }
-
             return newQty > 0 ? { ...item, quantity: newQty } : null;
           }
           return item;
@@ -222,16 +140,63 @@ export default function VentasPage() {
 
   const totalAmount = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
 
-  const handleCheckout = () => {
+const handleCheckout = async () => {
     if (cart.length === 0) return;
-    toast({
-      title: "Venta registrada en sesión",
-      description: "Transacción procesada correctamente en la caja.",
-      type: "success",
-    });
-    setIsSuccessModalOpen(true);
-    setCart([]);
+    setIsProcessing(true); // Bloquea el botón
+
+    try {
+      const refDoc = `POS-${Date.now().toString().slice(-6)}`;
+      const checkoutItems = cart.map((i) => ({
+        product_id: i.product_id || i.variant_id,
+        name: i.name,
+        sku: i.sku,
+        price: i.price,
+        quantity: i.quantity,
+        is_service: i.is_service,
+      }));
+
+      const res = await processPOSSale(checkoutItems, refDoc, paymentMethod, totalAmount);
+
+      if (!res.success) {
+        toast({
+          title: "Error al registrar la venta",
+          description: res.error || "La base de datos rechazó la transacción.",
+          type: "error",
+        });
+        return; // Sale sin limpiar el carrito para no perder los datos
+      }
+
+      toast({
+        title: "Venta Exitosa",
+        description: `Transacción procesada correctamente.`,
+        type: "success",
+      });
+
+      setIsSuccessModalOpen(true);
+      setCart([]); // Limpia el carrito
+      loadProducts(); // Actualiza el stock visualmente
+    } catch (error: any) {
+      toast({
+        title: "Error Crítico",
+        description: error?.message || "Fallo inesperado al comunicarse con el servidor.",
+        type: "error",
+      });
+    } finally {
+      // Garantiza que el botón SIEMPRE se desbloquee, pase lo que pase
+      setIsProcessing(false);
+    }
   };
+
+  const filteredProducts = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return products;
+    return products.filter(
+      (p) =>
+        p.name.toLowerCase().includes(q) ||
+        p.sku.toLowerCase().includes(q) ||
+        p.brand.toLowerCase().includes(q)
+    );
+  }, [products, searchQuery]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -244,39 +209,14 @@ export default function VentasPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         <div className="lg:col-span-7 flex flex-col gap-4">
+          
+          {/* Restaurado: Botones de Servicios */}
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs font-semibold text-muted-foreground mr-1">
-              Servicios Rápidos:
-            </span>
-            <Button
-              variant="outline"
-              size="sm"
-              className="border-border bg-card hover:bg-muted font-medium text-xs"
-              onClick={() =>
-                addServiceItem(
-                  "Mano de Obra: Cambio de Aceite y Filtro",
-                  15000,
-                  "SRV-ACEITE"
-                )
-              }
-            >
-              <Wrench className="mr-1.5 h-3.5 w-3.5 text-primary" />
-              + Cambio de Aceite ($15.000)
+            <Button variant="outline" size="sm" className="border-border bg-card hover:bg-muted font-medium text-xs" onClick={() => addServiceItem("Mano de Obra: Cambio de Aceite", 15000, "SRV-ACEITE")}>
+              <Wrench className="mr-1.5 h-3.5 w-3.5 text-primary" /> + Cambio de Aceite ($15.000)
             </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="border-border bg-card hover:bg-muted font-medium text-xs"
-              onClick={() =>
-                addServiceItem(
-                  "Mano de Obra: Cambio de Pastillas de Freno",
-                  20000,
-                  "SRV-PASTILLAS"
-                )
-              }
-            >
-              <Wrench className="mr-1.5 h-3.5 w-3.5 text-primary" />
-              + Cambio de Pastillas ($20.000)
+            <Button variant="outline" size="sm" className="border-border bg-card hover:bg-muted font-medium text-xs" onClick={() => addServiceItem("Mano de Obra: Cambio de Pastillas", 20000, "SRV-PASTILLAS")}>
+              <Wrench className="mr-1.5 h-3.5 w-3.5 text-primary" /> + Cambio de Pastillas ($20.000)
             </Button>
           </div>
 
@@ -284,13 +224,11 @@ export default function VentasPage() {
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               ref={searchInputRef}
-              autoFocus
               type="search"
-              placeholder="Buscar por SKU, Nº Parte (OEM), nombre o marca..."
-              className="pl-9 h-11 bg-background border-border text-sm shadow-xs focus-visible:ring-primary"
+              placeholder="Buscar por SKU, nombre o marca..."
+              className="pl-9 h-11 bg-background border-border text-sm"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              onKeyDown={handleKeyDownSearch}
             />
             <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1 text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded border border-border">
               <Barcode className="h-3 w-3 text-primary" />
@@ -298,86 +236,48 @@ export default function VentasPage() {
             </div>
           </div>
 
-          <div className="rounded-xl border border-border bg-background/50 backdrop-blur-sm overflow-hidden">
+          <div className="rounded-xl border border-border bg-background/50 overflow-hidden">
             <Table>
               <TableHeader className="bg-muted/50">
-                <TableRow className="border-border hover:bg-transparent">
-                  <TableHead className="font-semibold">Repuesto / Marca</TableHead>
-                  <TableHead className="text-right font-semibold">Precio</TableHead>
-                  <TableHead className="text-right font-semibold">Stock</TableHead>
-                  <TableHead className="text-center font-semibold">Acción</TableHead>
+                <TableRow className="border-border">
+                  <TableHead>Repuesto / Marca</TableHead>
+                  <TableHead className="text-right">Precio</TableHead>
+                  <TableHead className="text-right">Stock</TableHead>
+                  <TableHead className="text-center">Acción</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {isLoading ? (
                   <TableRow className="border-border">
                     <TableCell colSpan={4} className="h-32 text-center text-muted-foreground">
-                      <div className="flex items-center justify-center gap-2">
-                        <Loader2 className="h-5 w-5 animate-spin text-primary" />
-                        <span>Cargando catálogo desde Supabase...</span>
-                      </div>
+                      <Loader2 className="h-5 w-5 animate-spin mx-auto text-primary" />
                     </TableCell>
                   </TableRow>
-                ) : filteredProducts.length === 0 ? (
-                  <TableRow className="border-border">
-                    <TableCell colSpan={4} className="h-32 text-center text-muted-foreground">
-                      No hay repuestos registrados en el catálogo.
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  filteredProducts.map((product) => {
-                    const isCriticalStock = product.stock <= product.min_stock;
-                    const isOutOfStock = product.stock <= 0 && !product.is_service;
-
-                    return (
-                      <TableRow
-                        key={product.variant_id || product.id}
-                        className="border-border hover:bg-muted/30"
-                      >
-                        <TableCell>
-                          <div className="font-medium text-foreground">{product.name}</div>
-                          <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                            <span className="font-mono text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
-                              SKU: {product.sku}{" "}
-                              {product.part_number_factory
-                                ? `| OEM: ${product.part_number_factory}`
-                                : ""}
-                            </span>
-                            <span className="text-xs text-muted-foreground flex items-center gap-1">
-                              <Tag className="h-3 w-3" /> {product.brand}
-                            </span>
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums font-semibold text-foreground">
-                          ${product.price.toLocaleString("es-CL")}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          <span
-                            className={
-                              isOutOfStock
-                                ? "text-muted-foreground/60 font-normal line-through"
-                                : isCriticalStock
-                                ? "text-red-500 font-bold"
-                                : "text-muted-foreground font-medium"
-                            }
-                          >
-                            {product.stock} un.
-                          </span>
-                        </TableCell>
-                        <TableCell className="text-center">
-                          <Button
-                            size="sm"
-                            disabled={isOutOfStock}
-                            onClick={() => addProductToCart(product)}
-                            className="h-8 px-3 text-xs font-semibold"
-                          >
-                            {isOutOfStock ? "Agotado" : "Agregar"}
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })
-                )}
+                ) : filteredProducts.map((product) => {
+                  const isOutOfStock = product.stock <= 0 && !product.is_service;
+                  return (
+                    <TableRow key={product.id} className="border-border hover:bg-muted/30">
+                      <TableCell>
+                        <div className="font-medium text-foreground">{product.name}</div>
+                        <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                          <span className="font-mono text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">{product.sku}</span>
+                          <span className="text-xs text-muted-foreground flex items-center gap-1"><Tag className="h-3 w-3" /> {product.brand}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right font-semibold">${product.price.toLocaleString("es-CL")}</TableCell>
+                      <TableCell className="text-right font-bold text-muted-foreground">
+                         <span className={isOutOfStock ? "text-muted-foreground/50 line-through" : product.stock <= product.min_stock ? "text-red-500" : ""}>
+                           {product.stock} un.
+                         </span>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <Button size="sm" disabled={isOutOfStock} onClick={() => addProductToCart(product)}>
+                          {isOutOfStock ? "Agotado" : "Agregar"}
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           </div>
@@ -394,100 +294,53 @@ export default function VentasPage() {
             </span>
           </div>
 
-          <div className="flex flex-col gap-3 py-4 max-h-[320px] overflow-y-auto divide-y divide-border/50">
+          <div className="flex flex-col gap-3 py-4 max-h-[300px] overflow-y-auto divide-y divide-border/50">
             {cart.length === 0 ? (
-              <div className="py-12 text-center text-muted-foreground text-sm flex flex-col items-center gap-2">
-                <ShoppingCart className="h-8 w-8 text-muted-foreground/40" />
-                <span>La caja está libre. Escanea un código o agrega repuestos para comenzar.</span>
+              <div className="py-12 text-center text-muted-foreground text-sm">
+                 La caja está libre. Agrega repuestos o servicios para comenzar.
               </div>
-            ) : (
-              cart.map((item) => {
-                const isMaxReached = !item.is_service && item.quantity >= item.stock;
-
-                return (
-                  <div
-                    key={item.variant_id}
-                    className="pt-3 first:pt-0 flex items-center justify-between gap-2"
-                  >
-                    <div className="flex flex-col min-w-0 flex-1">
-                      <span className="font-medium text-sm truncate flex items-center gap-1.5">
-                        {item.name}
-                        {item.is_service && (
-                          <span className="text-[10px] bg-blue-500/10 text-blue-400 border border-blue-500/20 px-1.5 py-0.2 rounded uppercase font-bold">
-                            Servicio
-                          </span>
-                        )}
-                      </span>
-                      <span className="text-xs text-muted-foreground font-mono">
-                        ${item.price.toLocaleString("es-CL")} c/u{" "}
-                        {!item.is_service && `(Máx: ${item.stock})`}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-1.5">
-                      <Button
-                        variant="outline"
-                        size="icon-xs"
-                        onClick={() => updateQuantity(item.variant_id, -1)}
-                      >
-                        <Minus className="h-3 w-3" />
-                      </Button>
-                      <span className="text-xs font-semibold w-6 text-center tabular-nums">
-                        {item.quantity}
-                      </span>
-                      <Button
-                        variant="outline"
-                        size="icon-xs"
-                        disabled={isMaxReached}
-                        onClick={() => updateQuantity(item.variant_id, 1)}
-                        className={isMaxReached ? "opacity-50 cursor-not-allowed" : ""}
-                      >
-                        <Plus className="h-3 w-3" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon-xs"
-                        className="text-destructive hover:bg-destructive/10 ml-1"
-                        onClick={() => removeFromCart(item.variant_id)}
-                      >
-                        <Trash2 className="h-3 w-3" />
-                      </Button>
-                    </div>
-                  </div>
-                );
-              })
-            )}
+            ) : cart.map((item) => (
+              <div key={item.variant_id} className="pt-3 first:pt-0 flex items-center justify-between gap-2">
+                <div className="flex flex-col min-w-0 flex-1">
+                  <span className="font-medium text-sm truncate flex items-center gap-1.5">
+                    {item.name}
+                    {item.is_service && <span className="text-[10px] bg-blue-500/10 text-blue-400 border border-blue-500/20 px-1.5 py-0.2 rounded uppercase font-bold">Servicio</span>}
+                  </span>
+                  <span className="text-xs text-muted-foreground font-mono">${item.price.toLocaleString("es-CL")} c/u</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <Button variant="outline" size="icon-xs" onClick={() => updateQuantity(item.variant_id, -1)}><Minus className="h-3 w-3" /></Button>
+                  <span className="text-xs font-semibold w-6 text-center">{item.quantity}</span>
+                  <Button variant="outline" size="icon-xs" onClick={() => updateQuantity(item.variant_id, 1)}><Plus className="h-3 w-3" /></Button>
+                  <Button variant="ghost" size="icon-xs" className="text-destructive ml-1" onClick={() => removeFromCart(item.variant_id)}><Trash2 className="h-3 w-3" /></Button>
+                </div>
+              </div>
+            ))}
           </div>
 
+          {/* Restaurado: Opciones de Pago */}
           <div className="flex flex-col gap-2 py-3 border-t border-border">
             <span className="text-xs font-medium text-muted-foreground">Método de Pago:</span>
             <div className="grid grid-cols-3 gap-2">
               {(["Efectivo", "Transferencia", "Tarjeta"] as const).map((method) => (
-                <Button
-                  key={method}
-                  variant={paymentMethod === method ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setPaymentMethod(method)}
-                  className="text-xs font-medium"
-                >
+                <Button key={method} variant={paymentMethod === method ? "default" : "outline"} size="sm" onClick={() => setPaymentMethod(method)} className="text-xs font-medium">
                   {method}
                 </Button>
               ))}
             </div>
           </div>
 
-          <div className="pt-4 border-t border-border flex flex-col gap-4 mt-auto">
-            <div className="flex items-center justify-between text-lg font-bold">
+          <div className="pt-4 border-t border-border flex flex-col gap-4">
+            <div className="flex justify-between text-xl font-bold">
               <span>Total a Cobrar:</span>
-              <span className="text-primary tabular-nums text-2xl font-black">
-                ${totalAmount.toLocaleString("es-CL")}
-              </span>
+              <span className="text-primary text-2xl font-black">${totalAmount.toLocaleString("es-CL")}</span>
             </div>
             <Button
-              className="w-full h-11 text-base bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-md"
-              disabled={cart.length === 0}
+              className="w-full h-11 bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
+              disabled={cart.length === 0 || isProcessing}
               onClick={handleCheckout}
             >
+              {isProcessing ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
               Completar Venta ({paymentMethod})
             </Button>
           </div>
@@ -496,20 +349,11 @@ export default function VentasPage() {
 
       {isSuccessModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs">
-          <div className="bg-card border border-border rounded-xl p-6 max-w-sm w-full mx-4 flex flex-col items-center text-center shadow-xl">
-            <div className="h-12 w-12 rounded-full bg-emerald-500/15 text-emerald-500 flex items-center justify-center mb-4">
-              <CheckCircle2 className="h-6 w-6" />
-            </div>
+          <div className="bg-card border border-border rounded-xl p-6 max-w-sm w-full text-center">
+            <CheckCircle2 className="h-10 w-10 text-emerald-500 mx-auto mb-3" />
             <h3 className="text-lg font-bold">¡Venta Registrada con Éxito!</h3>
-            <p className="text-sm text-muted-foreground mt-1 mb-6">
-              Transacción finalizada en la terminal de ventas.
-            </p>
-            <Button
-              className="w-full font-semibold"
-              onClick={() => setIsSuccessModalOpen(false)}
-            >
-              Siguiente Venta
-            </Button>
+            <p className="text-sm text-muted-foreground mt-1 mb-4">Transacción finalizada y stock actualizado.</p>
+            <Button className="w-full font-semibold" onClick={() => setIsSuccessModalOpen(false)}>Siguiente Venta</Button>
           </div>
         </div>
       )}
