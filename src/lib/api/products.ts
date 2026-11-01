@@ -1,7 +1,7 @@
 // lib/api/products.ts
 import { createClient } from "@/lib/supabase/client";
 import { requireAuthenticatedUser } from "@/lib/api/auth";
-import { Product } from "@/types";
+import { Product, MASTER_PRODUCT_CATEGORIES, MASTER_SERVICE_CATEGORIES } from "@/types";
 
 export interface GetProductsParams {
   page?: number;
@@ -19,6 +19,36 @@ export interface PaginatedProducts {
 }
 
 /**
+ * Obtiene las categorías unificadas (Base de datos Supabase + Lista Maestra)
+ * actuando PostgreSQL como única fuente de la verdad.
+ */
+export async function getCategories(isService: boolean = false): Promise<string[]> {
+  try {
+    const supabase = createClient();
+    const { data, error } = await supabase
+      .from("products")
+      .select("category")
+      .eq("is_service", isService);
+
+    const masterCategories = isService ? MASTER_SERVICE_CATEGORIES : MASTER_PRODUCT_CATEGORIES;
+
+    if (error || !data) {
+      return Array.from(new Set(masterCategories));
+    }
+
+    const dbCategories = data
+      .map((item) => item.category?.trim())
+      .filter((cat): cat is string => Boolean(cat));
+
+    const combined = Array.from(new Set([...masterCategories, ...dbCategories]));
+    return combined;
+  } catch (error) {
+    console.error("Error obteniendo maestro de categorías:", error);
+    return isService ? [...MASTER_SERVICE_CATEGORIES] : [...MASTER_PRODUCT_CATEGORIES];
+  }
+}
+
+/**
  * Consulta el catálogo de productos o servicios con soporte para paginación y búsqueda.
  */
 export async function getProducts(params?: GetProductsParams): Promise<Product[]> {
@@ -29,29 +59,23 @@ export async function getProducts(params?: GetProductsParams): Promise<Product[]
       .select("*")
       .order("created_at", { ascending: false });
 
-    // Filtrar estrictamente si se solicita por repuesto físico o servicio
     if (params?.is_service !== undefined) {
       query = query.eq("is_service", params.is_service);
     }
-
     if (params?.search?.trim()) {
       const q = `%${params.search.trim().toLowerCase()}%`;
       query = query.or(`sku.ilike.${q},name.ilike.${q},brand.ilike.${q},part_number_factory.ilike.${q}`);
     }
-
     if (params?.page && params?.limit) {
       const from = (params.page - 1) * params.limit;
       const to = from + params.limit - 1;
       query = query.range(from, to);
     }
-
     const { data, error } = await query;
-
     if (error) {
       console.error("Error consultando catálogo:", error.message);
       return [];
     }
-
     return (data as Product[]) || [];
   } catch (error) {
     const message = error instanceof Error ? error.message : "Error desconocido";
@@ -77,9 +101,7 @@ export async function createProduct(input: CreateProductInput): Promise<{ succes
   try {
     const user = await requireAuthenticatedUser();
     const supabase = createClient();
-
     const isService = Boolean(input.is_service);
-
     const { data: productData, error: productError } = await supabase
       .from("products")
       .insert([
@@ -114,7 +136,6 @@ export async function createProduct(input: CreateProductInput): Promise<{ succes
         },
       ]);
     }
-
     return { success: true, data: productData as Product };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Error al conectar con la base de datos.";
@@ -129,7 +150,6 @@ export async function updateProduct(
   try {
     await requireAuthenticatedUser();
     const supabase = createClient();
-
     const updatePayload: Record<string, unknown> = {};
     if (input.name !== undefined) updatePayload.name = input.name.trim();
     if (input.brand !== undefined) updatePayload.brand = input.brand.trim();
@@ -151,7 +171,6 @@ export async function updateProduct(
     if (error || !data) {
       return { success: false, error: error?.message || "Error al actualizar la ficha." };
     }
-
     return { success: true, data: data as Product };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Error de red al actualizar.";
@@ -163,7 +182,6 @@ export async function bulkCreateProducts(productsList: CreateProductInput[]): Pr
   try {
     const user = await requireAuthenticatedUser();
     const supabase = createClient();
-
     const formattedProducts = productsList.map((p) => {
       const isSrv = Boolean(p.is_service);
       return {
@@ -199,12 +217,10 @@ export async function bulkCreateProducts(productsList: CreateProductInput[]): Pr
           reference_document: "CARGA_MASIVA",
           cashier_email: user.email,
         }));
-
       if (initialTransactions.length > 0) {
         await supabase.from("inventory_transactions").insert(initialTransactions);
       }
     }
-
     return { success: true, insertedCount: insertedProducts?.length || 0 };
   } catch (err) {
     const message = err instanceof Error ? err.message : "Error al procesar la carga masiva.";

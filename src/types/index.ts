@@ -1,10 +1,40 @@
+// types/index.ts
+
 export type ProductCategory =
   | 'Lubricantes y Aceites'
   | 'Filtros'
   | 'Frenos'
   | 'Suspensión y Dirección'
   | 'Motor y Correas'
-  | 'Accesorios e Iluminación';
+  | 'Accesorios e Iluminación'
+  | 'Electricidad y Baterías'
+  | 'General';
+
+export type ServiceCategory =
+  | 'Mano de Obra'
+  | 'Diagnóstico'
+  | 'Mantención Preventiva'
+  | 'Reparación de Taller'
+  | 'Alineación y Balanceo';
+
+export const MASTER_PRODUCT_CATEGORIES: ProductCategory[] = [
+  'Lubricantes y Aceites',
+  'Filtros',
+  'Frenos',
+  'Suspensión y Dirección',
+  'Motor y Correas',
+  'Accesorios e Iluminación',
+  'Electricidad y Baterías',
+  'General',
+];
+
+export const MASTER_SERVICE_CATEGORIES: ServiceCategory[] = [
+  'Mano de Obra',
+  'Diagnóstico',
+  'Mantención Preventiva',
+  'Reparación de Taller',
+  'Alineación y Balanceo',
+];
 
 export interface Product {
   id: string;
@@ -13,7 +43,7 @@ export interface Product {
   part_number_factory?: string | null;
   barcode?: string | null;
   name: string;
-  category: ProductCategory | string;
+  category: ProductCategory | ServiceCategory | string;
   brand: string;
   price: number;
   stock: number;

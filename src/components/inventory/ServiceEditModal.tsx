@@ -3,7 +3,7 @@
 
 import { useState, useEffect } from "react";
 import { Product } from "@/types";
-import { updateProduct } from "@/lib/api/products";
+import { updateProduct, getCategories } from "@/lib/api/products";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -19,17 +19,28 @@ interface ServiceEditModalProps {
 
 export function ServiceEditModal({ product, isOpen, onClose, onSuccess }: ServiceEditModalProps) {
   const [name, setName] = useState("");
-  const [category, setCategory] = useState("Mano de Obra / Servicios");
+  const [category, setCategory] = useState("Mano de Obra");
+  const [availableCategories, setAvailableCategories] = useState<string[]>([]);
   const [price, setPrice] = useState("");
   const [isUpdating, setIsUpdating] = useState(false);
+  const [isLoadingCategories, setIsLoadingCategories] = useState(false);
 
   useEffect(() => {
-    if (product) {
+    if (product && isOpen) {
       setName(product.name || "");
-      setCategory(product.category || "Mano de Obra / Servicios");
       setPrice(product.price ? product.price.toString() : "0");
+      
+      const isSrv = Boolean(product.is_service);
+      setIsLoadingCategories(true);
+      
+      getCategories(isSrv)
+        .then((cats) => {
+          setAvailableCategories(cats);
+          setCategory(product.category || cats[0] || (isSrv ? "Mano de Obra" : "Lubricantes y Aceites"));
+        })
+        .finally(() => setIsLoadingCategories(false));
     }
-  }, [product]);
+  }, [product, isOpen]);
 
   if (!isOpen || !product) return null;
 
@@ -91,18 +102,31 @@ export function ServiceEditModal({ product, isOpen, onClose, onSuccess }: Servic
           </div>
 
           <div>
-            <Label htmlFor="edit_category">Categoría</Label>
-            <Input
-              id="edit_category"
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
-              className="mt-1"
-              required
-            />
+            <Label htmlFor="edit_category">Categoría Estandarizada *</Label>
+            {isLoadingCategories ? (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground py-2">
+                <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                <span>Cargando maestro de categorías...</span>
+              </div>
+            ) : (
+              <select
+                id="edit_category"
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+                className="w-full h-9 mt-1 rounded-lg bg-background border border-input text-sm px-3 text-foreground outline-hidden cursor-pointer"
+                required
+              >
+                {availableCategories.map((cat) => (
+                  <option key={cat} value={cat} className="bg-background text-foreground">
+                    {cat}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
 
           <div>
-            <Label htmlFor="edit_price">Precio de Venta ($) *</Label>
+            <Label htmlFor="edit_price">Precio de Venta Público ($) *</Label>
             <Input
               id="edit_price"
               type="number"
