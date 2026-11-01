@@ -7,18 +7,24 @@ import { Product } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "@/components/ui/toast";
-import { Search, Plus, UploadCloud, FileDown } from "lucide-react";
+import { Search, Plus, UploadCloud, FileDown, Package, Wrench } from "lucide-react";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { InventoryTable } from "@/components/inventory/InventoryTable";
+import { ServicesTable } from "@/components/inventory/ServicesTable";
 import { ProductDetailDrawer } from "@/components/inventory/ProductDetailDrawer";
 import { BulkUploadModal } from "@/components/inventory/BulkUploadModal";
 import { ProductCreateModal } from "@/components/inventory/ProductCreateModal";
+import { ServiceEditModal } from "@/components/inventory/ServiceEditModal";
 
 export default function InventarioPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterStatus, setFilterStatus] = useState("ALL");
+  const [activeTab, setActiveTab] = useState<"physical" | "services">("physical");
+
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [editingService, setEditingService] = useState<Product | null>(null);
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isBulkModalOpen, setIsBulkModalOpen] = useState(false);
@@ -51,14 +57,24 @@ export default function InventarioPage() {
     });
   };
 
-  const filteredCatalog = useMemo(() => {
-    return products.filter((p) => {
+  // Separa explícitamente repuestos físicos y servicios de taller
+  const physicalProducts = useMemo(() => {
+    return products.filter((p) => !p.is_service);
+  }, [products]);
+
+  const workshopServices = useMemo(() => {
+    return products.filter((p) => Boolean(p.is_service));
+  }, [products]);
+
+  // Filtros aplicados sobre Repuestos Físicos
+  const filteredPhysicalProducts = useMemo(() => {
+    return physicalProducts.filter((p) => {
+      const q = searchQuery.toLowerCase();
       const matchSearch =
-        p.sku.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        p.brand.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (p.part_number_factory &&
-          p.part_number_factory.toLowerCase().includes(searchQuery.toLowerCase()));
+        p.sku.toLowerCase().includes(q) ||
+        p.name.toLowerCase().includes(q) ||
+        p.brand.toLowerCase().includes(q) ||
+        (p.part_number_factory && p.part_number_factory.toLowerCase().includes(q));
 
       const matchStatus =
         filterStatus === "ALL"
@@ -71,7 +87,19 @@ export default function InventarioPage() {
 
       return matchSearch && matchStatus;
     });
-  }, [products, searchQuery, filterStatus]);
+  }, [physicalProducts, searchQuery, filterStatus]);
+
+  // Filtros aplicados sobre Servicios de Taller (sin alertas de stock)
+  const filteredServices = useMemo(() => {
+    return workshopServices.filter((s) => {
+      const q = searchQuery.toLowerCase();
+      return (
+        s.name.toLowerCase().includes(q) ||
+        s.sku.toLowerCase().includes(q) ||
+        s.category.toLowerCase().includes(q)
+      );
+    });
+  }, [workshopServices, searchQuery]);
 
   return (
     <div className="flex flex-col gap-6 relative">
@@ -79,28 +107,37 @@ export default function InventarioPage() {
         <div className="flex-1 w-full max-w-2xl">
           <h1 className="text-3xl font-bold tracking-tight">Catálogo e Inventario</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Gestión centralizada de repuestos y control de stock en tiempo real.
+            Gestión centralizada de repuestos físicos y servicios de taller en tiempo real.
           </p>
-          <div className="flex items-center gap-2 mt-3">
+          
+          <div className="flex items-center gap-2 mt-4">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
               <Input
                 type="search"
-                placeholder="Buscar por Marca, Nombre, SKU o N° de Parte OEM..."
+                placeholder={
+                  activeTab === "physical"
+                    ? "Buscar repuestos por Marca, Nombre, SKU o N° OEM..."
+                    : "Buscar servicios por Nombre o Categoría..."
+                }
                 className="pl-10 h-11 text-base bg-card border-border shadow-xs focus-visible:ring-primary"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
             </div>
-            <select
-              value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value)}
-              className="h-11 bg-card border border-border rounded-lg text-xs font-semibold px-3 text-foreground outline-hidden cursor-pointer"
-            >
-              <option value="ALL">Todos los Repuestos</option>
-              <option value="CRITICAL">Stock Crítico</option>
-              <option value="OUT">Agotados</option>
-            </select>
+
+            {/* El filtro por estado (Stock Crítico / Agotados) SOLO aplica sobre Repuestos Físicos */}
+            {activeTab === "physical" && (
+              <select
+                value={filterStatus}
+                onChange={(e) => setFilterStatus(e.target.value)}
+                className="h-11 bg-card border border-border rounded-lg text-xs font-semibold px-3 text-foreground outline-hidden cursor-pointer"
+              >
+                <option value="ALL">Todos los Repuestos</option>
+                <option value="CRITICAL">Stock Crítico</option>
+                <option value="OUT">Agotados</option>
+              </select>
+            )}
           </div>
         </div>
 
@@ -123,20 +160,64 @@ export default function InventarioPage() {
             className="h-10 bg-primary text-primary-foreground font-semibold shadow-xs"
             onClick={() => setIsAddModalOpen(true)}
           >
-            <Plus className="mr-2 h-4 w-4" /> Nuevo Producto
+            <Plus className="mr-2 h-4 w-4" /> Nuevo Repuesto / Servicio
           </Button>
         </div>
       </div>
 
-      <InventoryTable
-        products={filteredCatalog}
-        isLoading={isLoading}
-        onSelectProduct={(p) => setSelectedProduct(p)}
-      />
+      {/* Pestañas (Tabs) de Shadcn UI */}
+      <Tabs
+        defaultValue="physical"
+        value={activeTab}
+        onValueChange={(val) => setActiveTab(val as "physical" | "services")}
+      >
+        <TabsList>
+          <TabsTrigger value="physical" className="flex items-center gap-2">
+            <Package className="h-4 w-4" />
+            <span>Repuestos Físicos</span>
+            <span className="ml-1 px-2 py-0.5 text-[10px] rounded-full bg-primary/10 text-primary font-bold">
+              {physicalProducts.length}
+            </span>
+          </TabsTrigger>
 
+          <TabsTrigger value="services" className="flex items-center gap-2">
+            <Wrench className="h-4 w-4" />
+            <span>Servicios de Taller</span>
+            <span className="ml-1 px-2 py-0.5 text-[10px] rounded-full bg-blue-500/10 text-blue-400 font-bold">
+              {workshopServices.length}
+            </span>
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="physical">
+          <InventoryTable
+            products={filteredPhysicalProducts}
+            isLoading={isLoading}
+            onSelectProduct={(p) => setSelectedProduct(p)}
+          />
+        </TabsContent>
+
+        <TabsContent value="services">
+          <ServicesTable
+            services={filteredServices}
+            isLoading={isLoading}
+            onEditService={(srv) => setEditingService(srv)}
+            onSelectService={(srv) => setSelectedProduct(srv)}
+          />
+        </TabsContent>
+      </Tabs>
+
+      {/* Modales y Drawers Retrocompatibles */}
       <ProductDetailDrawer
         product={selectedProduct}
         onClose={() => setSelectedProduct(null)}
+      />
+
+      <ServiceEditModal
+        product={editingService}
+        isOpen={Boolean(editingService)}
+        onClose={() => setEditingService(null)}
+        onSuccess={loadCatalog}
       />
 
       <BulkUploadModal

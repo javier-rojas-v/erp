@@ -1,3 +1,4 @@
+// lib/api/dashboard.ts
 import { createClient } from "@/lib/supabase/client";
 
 export interface DashboardStats {
@@ -8,6 +9,8 @@ export interface DashboardStats {
     sku: string;
     quantitySold: number;
   } | null;
+  lowStockCount?: number;
+  totalInventoryValue?: number;
 }
 
 export async function getDashboardStats(): Promise<DashboardStats> {
@@ -15,6 +18,8 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     todaySalesTotal: 0,
     todayCashTotal: 0,
     topProductThisWeek: null,
+    lowStockCount: 0,
+    totalInventoryValue: 0,
   };
 
   try {

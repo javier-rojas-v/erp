@@ -8,6 +8,7 @@ export interface GetProductsParams {
   limit?: number;
   search?: string;
   status?: string;
+  is_service?: boolean;
 }
 
 export interface PaginatedProducts {
@@ -18,8 +19,7 @@ export interface PaginatedProducts {
 }
 
 /**
- * Consulta el catálogo de productos. Admite paginación y búsqueda nativa en BD.
- * Si no se envían parámetros, retoma comportamiento retrocompatible.
+ * Consulta el catálogo de productos o servicios con soporte para paginación y búsqueda.
  */
 export async function getProducts(params?: GetProductsParams): Promise<Product[]> {
   try {
@@ -28,6 +28,11 @@ export async function getProducts(params?: GetProductsParams): Promise<Product[]
       .from("products")
       .select("*")
       .order("created_at", { ascending: false });
+
+    // Filtrar estrictamente si se solicita por repuesto físico o servicio
+    if (params?.is_service !== undefined) {
+      query = query.eq("is_service", params.is_service);
+    }
 
     if (params?.search?.trim()) {
       const q = `%${params.search.trim().toLowerCase()}%`;
@@ -73,6 +78,8 @@ export async function createProduct(input: CreateProductInput): Promise<{ succes
     const user = await requireAuthenticatedUser();
     const supabase = createClient();
 
+    const isService = Boolean(input.is_service);
+
     const { data: productData, error: productError } = await supabase
       .from("products")
       .insert([
@@ -84,19 +91,19 @@ export async function createProduct(input: CreateProductInput): Promise<{ succes
           category: input.category,
           brand: input.brand.trim(),
           price: Number(input.price),
-          stock: Number(input.stock),
-          min_stock: Number(input.min_stock),
-          is_service: Boolean(input.is_service),
+          stock: isService ? 0 : Number(input.stock),
+          min_stock: isService ? 0 : Number(input.min_stock),
+          is_service: isService,
         },
       ])
       .select()
       .single();
 
     if (productError || !productData) {
-      return { success: false, error: productError?.message || "No se pudo crear el repuesto." };
+      return { success: false, error: productError?.message || "No se pudo crear el elemento." };
     }
 
-    if (input.stock > 0 && !input.is_service) {
+    if (!isService && input.stock > 0) {
       await supabase.from("inventory_transactions").insert([
         {
           product_id: productData.id,
@@ -115,23 +122,63 @@ export async function createProduct(input: CreateProductInput): Promise<{ succes
   }
 }
 
+export async function updateProduct(
+  id: string,
+  input: Partial<CreateProductInput>
+): Promise<{ success: boolean; data?: Product; error?: string }> {
+  try {
+    await requireAuthenticatedUser();
+    const supabase = createClient();
+
+    const updatePayload: Record<string, unknown> = {};
+    if (input.name !== undefined) updatePayload.name = input.name.trim();
+    if (input.brand !== undefined) updatePayload.brand = input.brand.trim();
+    if (input.category !== undefined) updatePayload.category = input.category;
+    if (input.price !== undefined) updatePayload.price = Number(input.price);
+    if (input.stock !== undefined) updatePayload.stock = Number(input.stock);
+    if (input.min_stock !== undefined) updatePayload.min_stock = Number(input.min_stock);
+    if (input.part_number_factory !== undefined) updatePayload.part_number_factory = input.part_number_factory?.trim() || null;
+    if (input.barcode !== undefined) updatePayload.barcode = input.barcode?.trim() || null;
+    if (input.is_service !== undefined) updatePayload.is_service = Boolean(input.is_service);
+
+    const { data, error } = await supabase
+      .from("products")
+      .update(updatePayload)
+      .eq("id", id)
+      .select()
+      .single();
+
+    if (error || !data) {
+      return { success: false, error: error?.message || "Error al actualizar la ficha." };
+    }
+
+    return { success: true, data: data as Product };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Error de red al actualizar.";
+    return { success: false, error: message };
+  }
+}
+
 export async function bulkCreateProducts(productsList: CreateProductInput[]): Promise<{ success: boolean; insertedCount: number; error?: string }> {
   try {
     const user = await requireAuthenticatedUser();
     const supabase = createClient();
 
-    const formattedProducts = productsList.map((p) => ({
-      sku: p.sku.trim().toUpperCase(),
-      part_number_factory: p.part_number_factory?.trim() || null,
-      barcode: p.barcode?.trim() || null,
-      name: p.name.trim(),
-      category: p.category || "General",
-      brand: p.brand.trim(),
-      price: Math.max(0, Number(p.price) || 0),
-      stock: Math.max(0, Number(p.stock) || 0),
-      min_stock: Math.max(0, Number(p.min_stock) || 0),
-      is_service: Boolean(p.is_service),
-    }));
+    const formattedProducts = productsList.map((p) => {
+      const isSrv = Boolean(p.is_service);
+      return {
+        sku: p.sku.trim().toUpperCase(),
+        part_number_factory: p.part_number_factory?.trim() || null,
+        barcode: p.barcode?.trim() || null,
+        name: p.name.trim(),
+        category: p.category || "General",
+        brand: p.brand.trim(),
+        price: Math.max(0, Number(p.price) || 0),
+        stock: isSrv ? 0 : Math.max(0, Number(p.stock) || 0),
+        min_stock: isSrv ? 0 : Math.max(0, Number(p.min_stock) || 0),
+        is_service: isSrv,
+      };
+    });
 
     const { data: insertedProducts, error } = await supabase
       .from("products")
@@ -144,7 +191,7 @@ export async function bulkCreateProducts(productsList: CreateProductInput[]): Pr
 
     if (insertedProducts && insertedProducts.length > 0) {
       const initialTransactions = insertedProducts
-        .filter((p) => p.stock > 0)
+        .filter((p) => !p.is_service && p.stock > 0)
         .map((p) => ({
           product_id: p.id,
           type: "ADJUSTMENT_IN",
