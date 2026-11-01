@@ -1,21 +1,56 @@
+// lib/api/products.ts
 import { createClient } from "@/lib/supabase/client";
+import { requireAuthenticatedUser } from "@/lib/api/auth";
 import { Product } from "@/types";
 
-export async function getProducts(): Promise<Product[]> {
+export interface GetProductsParams {
+  page?: number;
+  limit?: number;
+  search?: string;
+  status?: string;
+}
+
+export interface PaginatedProducts {
+  data: Product[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+/**
+ * Consulta el catálogo de productos. Admite paginación y búsqueda nativa en BD.
+ * Si no se envían parámetros, retoma comportamiento retrocompatible.
+ */
+export async function getProducts(params?: GetProductsParams): Promise<Product[]> {
   try {
     const supabase = createClient();
-    const { data, error } = await supabase
+    let query = supabase
       .from("products")
       .select("*")
       .order("created_at", { ascending: false });
+
+    if (params?.search?.trim()) {
+      const q = `%${params.search.trim().toLowerCase()}%`;
+      query = query.or(`sku.ilike.${q},name.ilike.${q},brand.ilike.${q},part_number_factory.ilike.${q}`);
+    }
+
+    if (params?.page && params?.limit) {
+      const from = (params.page - 1) * params.limit;
+      const to = from + params.limit - 1;
+      query = query.range(from, to);
+    }
+
+    const { data, error } = await query;
 
     if (error) {
       console.error("Error consultando catálogo:", error.message);
       return [];
     }
+
     return (data as Product[]) || [];
   } catch (error) {
-    console.error("Error de conexión al servidor:", error);
+    const message = error instanceof Error ? error.message : "Error desconocido";
+    console.error("Error de conexión al servidor:", message);
     return [];
   }
 }
@@ -35,9 +70,8 @@ export interface CreateProductInput {
 
 export async function createProduct(input: CreateProductInput): Promise<{ success: boolean; data?: Product; error?: string }> {
   try {
+    const user = await requireAuthenticatedUser();
     const supabase = createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-    const cashierEmail = user?.email || "usuario@repuestostito.cl";
 
     const { data: productData, error: productError } = await supabase
       .from("products")
@@ -69,22 +103,22 @@ export async function createProduct(input: CreateProductInput): Promise<{ succes
           type: "ADJUSTMENT_IN",
           quantity: Number(input.stock),
           reference_document: "INVENTARIO_INICIAL",
-          cashier_email: cashierEmail,
+          cashier_email: user.email,
         },
       ]);
     }
 
     return { success: true, data: productData as Product };
-  } catch (error: any) {
-    return { success: false, error: error?.message || "Error al conectar con la base de datos." };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Error al conectar con la base de datos.";
+    return { success: false, error: message };
   }
 }
 
 export async function bulkCreateProducts(productsList: CreateProductInput[]): Promise<{ success: boolean; insertedCount: number; error?: string }> {
   try {
+    const user = await requireAuthenticatedUser();
     const supabase = createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-    const cashierEmail = user?.email || "usuario@repuestostito.cl";
 
     const formattedProducts = productsList.map((p) => ({
       sku: p.sku.trim().toUpperCase(),
@@ -116,7 +150,7 @@ export async function bulkCreateProducts(productsList: CreateProductInput[]): Pr
           type: "ADJUSTMENT_IN",
           quantity: p.stock,
           reference_document: "CARGA_MASIVA",
-          cashier_email: cashierEmail,
+          cashier_email: user.email,
         }));
 
       if (initialTransactions.length > 0) {
@@ -125,8 +159,9 @@ export async function bulkCreateProducts(productsList: CreateProductInput[]): Pr
     }
 
     return { success: true, insertedCount: insertedProducts?.length || 0 };
-  } catch (err: any) {
-    return { success: false, insertedCount: 0, error: err?.message || "Error al procesar la carga masiva." };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Error al procesar la carga masiva.";
+    return { success: false, insertedCount: 0, error: message };
   }
 }
 

@@ -1,4 +1,6 @@
+// lib/api/cash.ts
 import { createClient } from "@/lib/supabase/client";
+import { requireAuthenticatedUser } from "@/lib/api/auth";
 
 export interface CashSession {
   id: string;
@@ -36,6 +38,7 @@ export async function closeCashSession(
   montoReal: number
 ): Promise<{ success: boolean; error?: string }> {
   try {
+    await requireAuthenticatedUser();
     const supabase = createClient();
     const diferencia = montoReal - montoSistema;
 
@@ -53,18 +56,17 @@ export async function closeCashSession(
     if (error) {
       return { success: false, error: error.message };
     }
-
     return { success: true };
-  } catch (error: any) {
-    return { success: false, error: error?.message || "Error al cerrar la sesión de caja." };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Error al cerrar la sesión de caja.";
+    return { success: false, error: message };
   }
 }
 
 export async function openCashSession(montoInicial: number = 0): Promise<{ success: boolean; data?: CashSession; error?: string }> {
   try {
+    const user = await requireAuthenticatedUser();
     const supabase = createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-    const cashierEmail = user?.email || "caja@urustech.dev";
 
     const { data, error } = await supabase
       .from("cash_sessions")
@@ -76,7 +78,7 @@ export async function openCashSession(montoInicial: number = 0): Promise<{ succe
           monto_final_real: 0,
           diferencia: 0,
           status: "OPEN",
-          cashier_email: cashierEmail,
+          cashier_email: user.email,
         },
       ])
       .select()
@@ -85,9 +87,9 @@ export async function openCashSession(montoInicial: number = 0): Promise<{ succe
     if (error || !data) {
       return { success: false, error: error?.message || "No se pudo abrir la caja." };
     }
-
     return { success: true, data: data as CashSession };
-  } catch (error: any) {
-    return { success: false, error: error?.message || "Error iniciando sesión de caja." };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Error iniciando sesión de caja.";
+    return { success: false, error: message };
   }
 }

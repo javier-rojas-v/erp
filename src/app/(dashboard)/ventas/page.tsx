@@ -1,3 +1,4 @@
+// app/(dashboard)/ventas/page.tsx
 "use client";
 
 import { useState, useEffect, useRef, useMemo } from "react";
@@ -6,27 +7,12 @@ import { processPOSSale } from "@/lib/api/transactions";
 import { Product, CartItem } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "@/components/ui/toast";
-import {
-  Search,
-  ShoppingCart,
-  Plus,
-  Minus,
-  Trash2,
-  CheckCircle2,
-  Tag,
-  Barcode,
-  Loader2,
-  Wrench
-} from "lucide-react";
+import { Search, Tag, Barcode, Loader2 } from "lucide-react";
+import { POSServiceShortcuts } from "@/components/ventas/POSServiceShortcuts";
+import { CartSummary } from "@/components/ventas/CartSummary";
+import { POSCheckoutSuccessModal } from "@/components/ventas/POSCheckoutSuccessModal";
 
 export default function VentasPage() {
   const [products, setProducts] = useState<Product[]>([]);
@@ -38,7 +24,6 @@ export default function VentasPage() {
   const [isSuccessModalOpen, setIsSuccessModalOpen] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  // Helper para diferir notificaciones fuera del ciclo de renderizado de React
   const safeToast = (options: Parameters<typeof toast>[0]) => {
     setTimeout(() => {
       toast(options);
@@ -100,7 +85,9 @@ export default function VentasPage() {
     setCart((prev) => {
       const existing = prev.find((item) => item.variant_id === serviceVariantId);
       if (existing) {
-        return prev.map((item) => item.variant_id === serviceVariantId ? { ...item, quantity: item.quantity + 1 } : item);
+        return prev.map((item) =>
+          item.variant_id === serviceVariantId ? { ...item, quantity: item.quantity + 1 } : item
+        );
       }
       return [
         ...prev,
@@ -115,7 +102,6 @@ export default function VentasPage() {
         },
       ];
     });
-
     safeToast({
       title: "Servicio Agregado",
       description: `${name} agregado al ticket.`,
@@ -153,8 +139,6 @@ export default function VentasPage() {
     setCart((prev) => prev.filter((item) => item.variant_id !== variant_id));
   };
 
-  const totalAmount = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
-
   const handleCheckout = async () => {
     if (cart.length === 0) return;
     setIsProcessing(true);
@@ -168,7 +152,10 @@ export default function VentasPage() {
         quantity: i.quantity,
         is_service: i.is_service,
       }));
+
+      const totalAmount = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
       const res = await processPOSSale(checkoutItems, refDoc, paymentMethod, totalAmount);
+
       if (!res.success) {
         safeToast({
           title: "Error al registrar la venta",
@@ -177,6 +164,7 @@ export default function VentasPage() {
         });
         return;
       }
+
       safeToast({
         title: "Venta Exitosa",
         description: `Transacción procesada correctamente.`,
@@ -185,10 +173,11 @@ export default function VentasPage() {
       setIsSuccessModalOpen(true);
       setCart([]);
       loadProducts();
-    } catch (error: any) {
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Fallo inesperado al comunicarse con el servidor.";
       safeToast({
         title: "Error Crítico",
-        description: error?.message || "Fallo inesperado al comunicarse con el servidor.",
+        description: message,
         type: "error",
       });
     } finally {
@@ -215,16 +204,11 @@ export default function VentasPage() {
           Facturación rápida en mesón, control de servicios y rebaja de stock en tiempo real.
         </p>
       </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         <div className="lg:col-span-7 flex flex-col gap-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <Button variant="outline" size="sm" className="border-border bg-card hover:bg-muted font-medium text-xs" onClick={() => addServiceItem("Mano de Obra: Cambio de Aceite", 15000, "SRV-ACEITE")}>
-              <Wrench className="mr-1.5 h-3.5 w-3.5 text-primary" /> + Cambio de Aceite ($15.000)
-            </Button>
-            <Button variant="outline" size="sm" className="border-border bg-card hover:bg-muted font-medium text-xs" onClick={() => addServiceItem("Mano de Obra: Cambio de Pastillas", 20000, "SRV-PASTILLAS")}>
-              <Wrench className="mr-1.5 h-3.5 w-3.5 text-primary" /> + Cambio de Pastillas ($20.000)
-            </Button>
-          </div>
+          <POSServiceShortcuts onAddService={addServiceItem} />
+
           <div className="relative">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -240,6 +224,7 @@ export default function VentasPage() {
               <span>Escáner Activo</span>
             </div>
           </div>
+
           <div className="rounded-xl border border-border bg-background/50 overflow-hidden">
             <Table>
               <TableHeader className="bg-muted/50">
@@ -264,13 +249,27 @@ export default function VentasPage() {
                       <TableCell>
                         <div className="font-medium text-foreground">{product.name}</div>
                         <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                          <span className="font-mono text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">{product.sku}</span>
-                          <span className="text-xs text-muted-foreground flex items-center gap-1"><Tag className="h-3 w-3" /> {product.brand}</span>
+                          <span className="font-mono text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+                            {product.sku}
+                          </span>
+                          <span className="text-xs text-muted-foreground flex items-center gap-1">
+                            <Tag className="h-3 w-3" /> {product.brand}
+                          </span>
                         </div>
                       </TableCell>
-                      <TableCell className="text-right font-semibold">${product.price.toLocaleString("es-CL")}</TableCell>
+                      <TableCell className="text-right font-semibold">
+                        ${product.price.toLocaleString("es-CL")}
+                      </TableCell>
                       <TableCell className="text-right font-bold text-muted-foreground">
-                        <span className={isOutOfStock ? "text-muted-foreground/50 line-through" : product.stock <= product.min_stock ? "text-red-500" : ""}>
+                        <span
+                          className={
+                            isOutOfStock
+                              ? "text-muted-foreground/50 line-through"
+                              : product.stock <= product.min_stock
+                              ? "text-red-500"
+                              : ""
+                          }
+                        >
                           {product.stock} un.
                         </span>
                       </TableCell>
@@ -286,75 +285,24 @@ export default function VentasPage() {
             </Table>
           </div>
         </div>
-        <div className="lg:col-span-5 flex flex-col rounded-xl border border-border bg-card p-6 shadow-sm sticky top-6">
-          <div className="flex items-center justify-between pb-4 border-b border-border">
-            <div className="flex items-center gap-2">
-              <ShoppingCart className="h-5 w-5 text-primary" />
-              <h2 className="text-lg font-semibold tracking-tight">Ticket de Venta Actual</h2>
-            </div>
-            <span className="text-xs text-muted-foreground bg-secondary px-2.5 py-1 rounded-md font-mono font-semibold">
-              {cart.reduce((acc, item) => acc + item.quantity, 0)} ítems
-            </span>
-          </div>
-          <div className="flex flex-col gap-3 py-4 max-h-[300px] overflow-y-auto divide-y divide-border/50">
-            {cart.length === 0 ? (
-              <div className="py-12 text-center text-muted-foreground text-sm">
-                La caja está libre. Agrega repuestos o servicios para comenzar.
-              </div>
-            ) : cart.map((item) => (
-              <div key={item.variant_id} className="pt-3 first:pt-0 flex items-center justify-between gap-2">
-                <div className="flex flex-col min-w-0 flex-1">
-                  <span className="font-medium text-sm truncate flex items-center gap-1.5">
-                    {item.name}
-                    {item.is_service && <span className="text-[10px] bg-blue-500/10 text-blue-400 border border-blue-500/20 px-1.5 py-0.2 rounded uppercase font-bold">Servicio</span>}
-                  </span>
-                  <span className="text-xs text-muted-foreground font-mono">${item.price.toLocaleString("es-CL")} c/u</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <Button variant="outline" size="icon-xs" onClick={() => updateQuantity(item.variant_id, -1)}><Minus className="h-3 w-3" /></Button>
-                  <span className="text-xs font-semibold w-6 text-center">{item.quantity}</span>
-                  <Button variant="outline" size="icon-xs" onClick={() => updateQuantity(item.variant_id, 1)}><Plus className="h-3 w-3" /></Button>
-                  <Button variant="ghost" size="icon-xs" className="text-destructive ml-1" onClick={() => removeFromCart(item.variant_id)}><Trash2 className="h-3 w-3" /></Button>
-                </div>
-              </div>
-            ))}
-          </div>
-          <div className="flex flex-col gap-2 py-3 border-t border-border">
-            <span className="text-xs font-medium text-muted-foreground">Método de Pago:</span>
-            <div className="grid grid-cols-3 gap-2">
-              {(["Efectivo", "Transferencia", "Tarjeta"] as const).map((method) => (
-                <Button key={method} variant={paymentMethod === method ? "default" : "outline"} size="sm" onClick={() => setPaymentMethod(method)} className="text-xs font-medium">
-                  {method}
-                </Button>
-              ))}
-            </div>
-          </div>
-          <div className="pt-4 border-t border-border flex flex-col gap-4">
-            <div className="flex justify-between text-xl font-bold">
-              <span>Total a Cobrar:</span>
-              <span className="text-primary text-2xl font-black">${totalAmount.toLocaleString("es-CL")}</span>
-            </div>
-            <Button
-              className="w-full h-11 bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
-              disabled={cart.length === 0 || isProcessing}
-              onClick={handleCheckout}
-            >
-              {isProcessing ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-              Completar Venta ({paymentMethod})
-            </Button>
-          </div>
+
+        <div className="lg:col-span-5">
+          <CartSummary
+            cart={cart}
+            paymentMethod={paymentMethod}
+            isProcessing={isProcessing}
+            onUpdateQuantity={updateQuantity}
+            onRemoveFromCart={removeFromCart}
+            onPaymentMethodChange={setPaymentMethod}
+            onCheckout={handleCheckout}
+          />
         </div>
       </div>
-      {isSuccessModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs">
-          <div className="bg-card border border-border rounded-xl p-6 max-w-sm w-full text-center">
-            <CheckCircle2 className="h-10 w-10 text-emerald-500 mx-auto mb-3" />
-            <h3 className="text-lg font-bold">¡Venta Registrada con Éxito!</h3>
-            <p className="text-sm text-muted-foreground mt-1 mb-4">Transacción finalizada y stock actualizado.</p>
-            <Button className="w-full font-semibold" onClick={() => setIsSuccessModalOpen(false)}>Siguiente Venta</Button>
-          </div>
-        </div>
-      )}
+
+      <POSCheckoutSuccessModal
+        isOpen={isSuccessModalOpen}
+        onClose={() => setIsSuccessModalOpen(false)}
+      />
     </div>
   );
 }
