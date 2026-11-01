@@ -36,9 +36,6 @@ export const MASTER_SERVICE_CATEGORIES: ServiceCategory[] = [
   'Alineación y Balanceo',
 ];
 
-/**
- * Contrato genérico estandarizado de respuesta para mutaciones en la capa de datos (ERP y futuro CMS)
- */
 export interface MutationResult<T = any> {
   success: boolean;
   data?: T;
@@ -56,6 +53,7 @@ export interface Product {
   category: ProductCategory | ServiceCategory | string;
   brand: string;
   price: number;
+  cost_price: number; // Nuevo campo para cálculo de COGS
   stock: number;
   min_stock: number;
   is_service?: boolean;
@@ -71,4 +69,31 @@ export interface CartItem {
   quantity: number;
   stock: number;
   is_service: boolean;
+}
+
+export type ExpenseCategory =
+  | 'Arriendo'
+  | 'Servicios Básicos'
+  | 'Sueldos y Comisiones'
+  | 'Herramientas y Insumos'
+  | 'Impuestos y Patentes'
+  | 'Otros Gastos';
+
+export interface Expense {
+  id: string;
+  category: ExpenseCategory | string;
+  amount: number;
+  description?: string | null;
+  date: string;
+  cashier_email: string;
+  created_at?: string;
+}
+
+export interface AuditLog {
+  id: string;
+  event_type: 'CASH_OPEN' | 'CASH_CLOSE' | 'DISCREPANCY' | 'STOCK_ENTRY' | 'SYSTEM_ALERT';
+  description: string;
+  cashier_email: string;
+  metadata?: Record<string, any>;
+  created_at: string;
 }
