@@ -1,4 +1,4 @@
-// app/(dashboard)/inventario/page.tsx
+// src/app/(dashboard)/inventario/page.tsx
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
@@ -22,7 +22,7 @@ export default function InventarioPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [filterStatus, setFilterStatus] = useState("ALL");
   const [activeTab, setActiveTab] = useState<"physical" | "services">("physical");
-  
+
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -56,7 +56,6 @@ export default function InventarioPage() {
     });
   };
 
-  // Separa explícitamente repuestos físicos y servicios de taller
   const physicalProducts = useMemo(() => {
     return products.filter((p) => !p.is_service);
   }, [products]);
@@ -65,7 +64,6 @@ export default function InventarioPage() {
     return products.filter((p) => Boolean(p.is_service));
   }, [products]);
 
-  // Filtros aplicados sobre Repuestos Físicos
   const filteredPhysicalProducts = useMemo(() => {
     return physicalProducts.filter((p) => {
       const q = searchQuery.toLowerCase();
@@ -86,7 +84,6 @@ export default function InventarioPage() {
     });
   }, [physicalProducts, searchQuery, filterStatus]);
 
-  // Filtros aplicados sobre Servicios de Taller
   const filteredServices = useMemo(() => {
     return workshopServices.filter((s) => {
       const q = searchQuery.toLowerCase();
@@ -159,7 +156,6 @@ export default function InventarioPage() {
         </div>
       </div>
 
-      {/* Pestañas (Tabs) de Shadcn UI */}
       <Tabs
         defaultValue="physical"
         value={activeTab}
@@ -199,7 +195,6 @@ export default function InventarioPage() {
         </TabsContent>
       </Tabs>
 
-      {/* Modales y Drawers Unificados */}
       <ProductDetailDrawer
         product={selectedProduct}
         onClose={() => setSelectedProduct(null)}

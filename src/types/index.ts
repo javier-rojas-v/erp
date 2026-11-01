@@ -1,4 +1,4 @@
-// types/index.ts
+// src/types/index.ts
 
 export type ProductCategory =
   | 'Lubricantes y Aceites'
@@ -37,13 +37,13 @@ export const MASTER_SERVICE_CATEGORIES: ServiceCategory[] = [
 ];
 
 /**
- * Contrato genérico estandarizado para mutaciones de API en el sistema ERP/CMS
+ * Contrato genérico estandarizado de respuesta para mutaciones en la capa de datos (ERP y futuro CMS)
  */
 export interface MutationResult<T = any> {
   success: boolean;
   data?: T;
   error?: string;
-  insertedCount?: number; // Mantenido para retrocompatibilidad con Carga Masiva
+  insertedCount?: number;
 }
 
 export interface Product {

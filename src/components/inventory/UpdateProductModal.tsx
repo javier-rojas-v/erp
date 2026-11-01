@@ -1,4 +1,4 @@
-// components/inventory/UpdateProductModal.tsx
+// src/components/inventory/UpdateProductModal.tsx
 "use client";
 
 import { useState, useEffect } from "react";
@@ -24,7 +24,7 @@ export function UpdateProductModal({ product, isOpen, onClose, onSuccess }: Upda
   const [category, setCategory] = useState("");
   const [price, setPrice] = useState("");
   const [minStock, setMinStock] = useState("2");
-  
+
   const [availableCategories, setAvailableCategories] = useState<string[]>([]);
   const [isUpdating, setIsUpdating] = useState(false);
   const [isLoadingCategories, setIsLoadingCategories] = useState(false);
@@ -36,10 +36,10 @@ export function UpdateProductModal({ product, isOpen, onClose, onSuccess }: Upda
       setBrand(product.brand || "Genérico");
       setPrice(product.price !== undefined ? product.price.toString() : "0");
       setMinStock(product.min_stock !== undefined ? product.min_stock.toString() : "2");
-      
+
       const isSrv = Boolean(product.is_service);
       setIsLoadingCategories(true);
-      
+
       getCategories(isSrv)
         .then((cats) => {
           setAvailableCategories(cats);
@@ -61,7 +61,7 @@ export function UpdateProductModal({ product, isOpen, onClose, onSuccess }: Upda
     }
     const priceNum = parseFloat(price);
     if (isNaN(priceNum) || priceNum < 0) {
-      toast({ title: "Precio inválido", description: "Ingresa un precio válido.", type: "warning" });
+      toast({ title: "Precio inválido", description: "Ingresa un valor numérico mayor o igual a 0.", type: "warning" });
       return;
     }
 
@@ -72,8 +72,7 @@ export function UpdateProductModal({ product, isOpen, onClose, onSuccess }: Upda
     }
 
     setIsUpdating(true);
-    
-    // El SKU NO se modifica para resguardar la trazabilidad en Kardex
+
     const payload = isService
       ? {
           name: name.trim(),
@@ -97,7 +96,7 @@ export function UpdateProductModal({ product, isOpen, onClose, onSuccess }: Upda
     }
 
     toast({
-      title: "Ficha Actualizada",
+      title: isService ? "Servicio Actualizado" : "Repuesto Actualizado",
       description: `"${name}" se guardó correctamente.`,
       type: "success",
     });
@@ -126,7 +125,6 @@ export function UpdateProductModal({ product, isOpen, onClose, onSuccess }: Upda
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 flex flex-col gap-4">
-          {/* Campo SKU solo lectura */}
           {!isService && (
             <div>
               <div className="flex items-center justify-between mb-1">

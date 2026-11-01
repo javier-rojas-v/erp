@@ -1,4 +1,4 @@
-// lib/api/products.ts
+// src/lib/api/products.ts
 import { createClient } from "@/lib/supabase/client";
 import { requireAuthenticatedUser } from "@/lib/api/auth";
 import { Product, MASTER_PRODUCT_CATEGORIES, MASTER_SERVICE_CATEGORIES, MutationResult } from "@/types";
@@ -19,8 +19,8 @@ export interface PaginatedProducts {
 }
 
 /**
- * Obtiene las categorías unificadas (Base de datos Supabase + Lista Maestra)
- * actuando PostgreSQL como única fuente de la verdad.
+ * Obtiene las categorías unificadas (Supabase PostgreSQL + Lista Maestra)
+ * PostgreSQL actúa como única fuente de la verdad.
  */
 export async function getCategories(isService: boolean = false): Promise<string[]> {
   try {
@@ -40,8 +40,7 @@ export async function getCategories(isService: boolean = false): Promise<string[
       .map((item) => item.category?.trim())
       .filter((cat): cat is string => Boolean(cat));
 
-    const combined = Array.from(new Set([...masterCategories, ...dbCategories]));
-    return combined;
+    return Array.from(new Set([...masterCategories, ...dbCategories]));
   } catch (error) {
     console.error("Error obteniendo maestro de categorías:", error);
     return isService ? [...MASTER_SERVICE_CATEGORIES] : [...MASTER_PRODUCT_CATEGORIES];
@@ -98,26 +97,34 @@ export interface CreateProductInput {
 }
 
 /**
- * Crea una nueva ficha de producto o servicio retornado MutationResult<Product>
+ * Registra un nuevo producto o servicio en el catálogo.
  */
 export async function createProduct(input: CreateProductInput): Promise<MutationResult<Product>> {
   try {
     const user = await requireAuthenticatedUser();
     const supabase = createClient();
     const isService = Boolean(input.is_service);
+
+    const formattedSku = input.sku.trim().toUpperCase();
+    const formattedName = input.name.trim();
+    const formattedBrand = input.brand.trim();
+    const formattedPrice = Math.max(0, Number(input.price) || 0);
+    const formattedStock = isService ? 0 : Math.max(0, Number(input.stock) || 0);
+    const formattedMinStock = isService ? 0 : Math.max(0, Number(input.min_stock) || 0);
+
     const { data: productData, error: productError } = await supabase
       .from("products")
       .insert([
         {
-          sku: input.sku.trim().toUpperCase(),
+          sku: formattedSku,
           part_number_factory: input.part_number_factory?.trim() || null,
           barcode: input.barcode?.trim() || null,
-          name: input.name.trim(),
+          name: formattedName,
           category: input.category,
-          brand: input.brand.trim(),
-          price: Number(input.price),
-          stock: isService ? 0 : Number(input.stock),
-          min_stock: isService ? 0 : Number(input.min_stock),
+          brand: formattedBrand,
+          price: formattedPrice,
+          stock: formattedStock,
+          min_stock: formattedMinStock,
           is_service: isService,
         },
       ])
@@ -125,15 +132,15 @@ export async function createProduct(input: CreateProductInput): Promise<Mutation
       .single();
 
     if (productError || !productData) {
-      return { success: false, error: productError?.message || "No se pudo crear el elemento." };
+      return { success: false, error: productError?.message || "No se pudo crear el registro." };
     }
 
-    if (!isService && input.stock > 0) {
+    if (!isService && formattedStock > 0) {
       await supabase.from("inventory_transactions").insert([
         {
           product_id: productData.id,
           type: "ADJUSTMENT_IN",
-          quantity: Number(input.stock),
+          quantity: formattedStock,
           reference_document: "INVENTARIO_INICIAL",
           cashier_email: user.email,
         },
@@ -141,13 +148,13 @@ export async function createProduct(input: CreateProductInput): Promise<Mutation
     }
     return { success: true, data: productData as Product };
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Error al conectar con la base de datos.";
+    const message = error instanceof Error ? error.message : "Error de autenticación o conexión.";
     return { success: false, error: message };
   }
 }
 
 /**
- * Actualiza la ficha de un repuesto o servicio existente retornando MutationResult<Product>
+ * Actualiza una ficha existente con sanitización y resguardo estricto del SKU.
  */
 export async function updateProduct(
   id: string,
@@ -157,15 +164,18 @@ export async function updateProduct(
     await requireAuthenticatedUser();
     const supabase = createClient();
     const updatePayload: Record<string, unknown> = {};
+
     if (input.name !== undefined) updatePayload.name = input.name.trim();
     if (input.brand !== undefined) updatePayload.brand = input.brand.trim();
     if (input.category !== undefined) updatePayload.category = input.category;
-    if (input.price !== undefined) updatePayload.price = Number(input.price);
-    if (input.stock !== undefined) updatePayload.stock = Number(input.stock);
-    if (input.min_stock !== undefined) updatePayload.min_stock = Number(input.min_stock);
+    if (input.price !== undefined) updatePayload.price = Math.max(0, Number(input.price) || 0);
+    if (input.stock !== undefined) updatePayload.stock = Math.max(0, Number(input.stock) || 0);
+    if (input.min_stock !== undefined) updatePayload.min_stock = Math.max(0, Number(input.min_stock) || 0);
     if (input.part_number_factory !== undefined) updatePayload.part_number_factory = input.part_number_factory?.trim() || null;
     if (input.barcode !== undefined) updatePayload.barcode = input.barcode?.trim() || null;
     if (input.is_service !== undefined) updatePayload.is_service = Boolean(input.is_service);
+
+    // Protección explícita del SKU: no se incluye en el payload bajo ninguna circunstancia
 
     const { data, error } = await supabase
       .from("products")
@@ -175,17 +185,17 @@ export async function updateProduct(
       .single();
 
     if (error || !data) {
-      return { success: false, error: error?.message || "Error al actualizar la ficha." };
+      return { success: false, error: error?.message || "Error al actualizar en la base de datos." };
     }
     return { success: true, data: data as Product };
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Error de red al actualizar.";
+    const message = error instanceof Error ? error.message : "Error al procesar la actualización.";
     return { success: false, error: message };
   }
 }
 
 /**
- * Realiza la importación masiva de repuestos en lote retornando MutationResult<number>
+ * Carga masiva de catálogo vía transacción batch.
  */
 export async function bulkCreateProducts(productsList: CreateProductInput[]): Promise<MutationResult<number>> {
   try {

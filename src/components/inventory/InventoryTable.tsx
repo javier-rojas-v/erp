@@ -1,4 +1,4 @@
-// components/inventory/InventoryTable.tsx
+// src/components/inventory/InventoryTable.tsx
 "use client";
 
 import { Product } from "@/types";
