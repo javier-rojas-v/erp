@@ -21,7 +21,6 @@ export async function createProduct(input: CreateProductInput): Promise<Mutation
   try {
     const user = await requireAuthenticatedUser();
     const supabase = createClient();
-
     const isService = Boolean(input.is_service);
     const formattedSku = input.sku.trim().toUpperCase();
     const formattedName = input.name.trim();
@@ -120,6 +119,7 @@ export async function getProducts(params?: any): Promise<Product[]> {
     if (params?.is_service !== undefined) {
       query = query.eq("is_service", params.is_service);
     }
+
     if (params?.search?.trim()) {
       const q = `%${params.search.trim().toLowerCase()}%`;
       query = query.or(`sku.ilike.${q},name.ilike.${q},brand.ilike.${q},part_number_factory.ilike.${q}`);
@@ -130,6 +130,7 @@ export async function getProducts(params?: any): Promise<Product[]> {
       console.error("Error consultando catálogo:", error.message);
       return [];
     }
+
     return (data as Product[]) || [];
   } catch (error) {
     console.error("Error al obtener productos:", error);
@@ -146,12 +147,15 @@ export async function getCategories(isService: boolean = false): Promise<string[
       .eq("is_service", isService);
 
     const masterCategories = isService ? MASTER_SERVICE_CATEGORIES : MASTER_PRODUCT_CATEGORIES;
+
     if (error || !data) {
       return Array.from(new Set(masterCategories));
     }
+
     const dbCategories = data
       .map((item) => item.category?.trim())
       .filter((cat): cat is string => Boolean(cat));
+
     return Array.from(new Set([...masterCategories, ...dbCategories]));
   } catch (error) {
     console.error("Error obteniendo maestro de categorías:", error);
@@ -159,6 +163,11 @@ export async function getCategories(isService: boolean = false): Promise<string[
   }
 }
 
+/**
+ * Carga masiva e inserción/actualización (upsert por sku) de productos y servicios.
+ * Sanitiza campos financieros, control de inventario y datos opcionales, garantizando
+ * la trazabilidad inicial en inventory_transactions con tipo ADJUSTMENT_IN.
+ */
 export async function bulkCreateProducts(productsList: CreateProductInput[]): Promise<MutationResult<number>> {
   try {
     const user = await requireAuthenticatedUser();
@@ -166,21 +175,59 @@ export async function bulkCreateProducts(productsList: CreateProductInput[]): Pr
 
     const formattedProducts = productsList.map((p) => {
       const isSrv = Boolean(p.is_service);
+
+      // 1. Sanitización de SKU (mayúsculas sin espacios)
+      const sku = String(p.sku || "").trim().toUpperCase();
+
+      // 2. Sanitización de textos descriptivos
+      const name = String(p.name || "").trim();
+      const brand = String(p.brand || "").trim();
+      
+      let category = p.category ? String(p.category).trim() : "";
+      if (!category) {
+        category = isSrv ? "Mano de Obra" : "General";
+      }
+
+      // 3. Sanitización de precios y costos (COGS)
+      const price = Math.max(0, Number(p.price) || 0);
+      const cost_price = isSrv ? 0 : Math.max(0, Number(p.cost_price) || 0);
+
+      // 4. Control de Inventario (Servicios en 0, repuestos físicos enteros >= 0)
+      const stock = isSrv ? 0 : Math.max(0, Math.floor(Number(p.stock) || 0));
+      const parsedMinStock = Number(p.min_stock);
+      const min_stock = isSrv
+        ? 0
+        : isNaN(parsedMinStock) || parsedMinStock < 0
+        ? 2
+        : Math.floor(parsedMinStock);
+
+      // 5. Identificadores Opcionales (Cero espacios o null)
+      const part_number_factory =
+        p.part_number_factory && String(p.part_number_factory).trim() !== ""
+          ? String(p.part_number_factory).trim()
+          : null;
+
+      const barcode =
+        p.barcode && String(p.barcode).trim() !== ""
+          ? String(p.barcode).trim()
+          : null;
+
       return {
-        sku: p.sku.trim().toUpperCase(),
-        part_number_factory: p.part_number_factory?.trim() || null,
-        barcode: p.barcode?.trim() || null,
-        name: p.name.trim(),
-        category: p.category || "General",
-        brand: p.brand.trim(),
-        price: Math.max(0, Number(p.price) || 0),
-        cost_price: isSrv ? 0 : Math.max(0, Number(p.cost_price) || 0),
-        stock: isSrv ? 0 : Math.max(0, Number(p.stock) || 0),
-        min_stock: isSrv ? 0 : Math.max(0, Number(p.min_stock) || 0),
+        sku,
+        part_number_factory,
+        barcode,
+        name,
+        category,
+        brand,
+        price,
+        cost_price,
+        stock,
+        min_stock,
         is_service: isSrv,
       };
     });
 
+    // Operación masiva Upsert basada en la restricción del SKU
     const { data: insertedProducts, error } = await supabase
       .from("products")
       .upsert(formattedProducts, { onConflict: "sku" })
@@ -191,6 +238,8 @@ export async function bulkCreateProducts(productsList: CreateProductInput[]): Pr
     }
 
     const count = insertedProducts?.length || 0;
+
+    // Trazabilidad automatizada en Kardex para repuestos físicos con stock inicial
     if (insertedProducts && insertedProducts.length > 0) {
       const initialTransactions = insertedProducts
         .filter((p) => !p.is_service && p.stock > 0)
