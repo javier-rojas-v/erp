@@ -1,6 +1,8 @@
 // components/inventory/ServiceEditModal.tsx
 "use client";
 
+import { UpdateProductModal } from "./UpdateProductModal";
+export const ServiceEditModal = UpdateProductModal;
 import { useState, useEffect } from "react";
 import { Product } from "@/types";
 import { updateProduct, getCategories } from "@/lib/api/products";

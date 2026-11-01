@@ -4,15 +4,16 @@
 import { Product } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Tag, AlertTriangle, Loader2 } from "lucide-react";
+import { Tag, AlertTriangle, Loader2, Edit3 } from "lucide-react";
 
 interface InventoryTableProps {
   products: Product[];
   isLoading: boolean;
   onSelectProduct: (product: Product) => void;
+  onEditProduct: (product: Product) => void;
 }
 
-export function InventoryTable({ products, isLoading, onSelectProduct }: InventoryTableProps) {
+export function InventoryTable({ products, isLoading, onSelectProduct, onEditProduct }: InventoryTableProps) {
   return (
     <div className="rounded-xl border border-border bg-card/50 backdrop-blur-xs overflow-hidden shadow-xs">
       <Table>
@@ -82,14 +83,25 @@ export function InventoryTable({ products, isLoading, onSelectProduct }: Invento
                     </span>
                   </TableCell>
                   <TableCell className="text-center">
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      className="font-medium text-xs"
-                      onClick={() => onSelectProduct(product)}
-                    >
-                      Ver Detalles
-                    </Button>
+                    <div className="flex items-center justify-center gap-1.5">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="font-medium text-xs border-border"
+                        onClick={() => onEditProduct(product)}
+                      >
+                        <Edit3 className="mr-1.5 h-3.5 w-3.5 text-primary" />
+                        Editar
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="font-medium text-xs"
+                        onClick={() => onSelectProduct(product)}
+                      >
+                        Ver Detalles
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               );

@@ -14,7 +14,7 @@ import { ServicesTable } from "@/components/inventory/ServicesTable";
 import { ProductDetailDrawer } from "@/components/inventory/ProductDetailDrawer";
 import { BulkUploadModal } from "@/components/inventory/BulkUploadModal";
 import { ProductCreateModal } from "@/components/inventory/ProductCreateModal";
-import { ServiceEditModal } from "@/components/inventory/ServiceEditModal";
+import { UpdateProductModal } from "@/components/inventory/UpdateProductModal";
 
 export default function InventarioPage() {
   const [products, setProducts] = useState<Product[]>([]);
@@ -22,10 +22,9 @@ export default function InventarioPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [filterStatus, setFilterStatus] = useState("ALL");
   const [activeTab, setActiveTab] = useState<"physical" | "services">("physical");
-
+  
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
-  const [editingService, setEditingService] = useState<Product | null>(null);
-
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isBulkModalOpen, setIsBulkModalOpen] = useState(false);
 
@@ -75,7 +74,6 @@ export default function InventarioPage() {
         p.name.toLowerCase().includes(q) ||
         p.brand.toLowerCase().includes(q) ||
         (p.part_number_factory && p.part_number_factory.toLowerCase().includes(q));
-
       const matchStatus =
         filterStatus === "ALL"
           ? true
@@ -84,12 +82,11 @@ export default function InventarioPage() {
           : filterStatus === "OUT"
           ? p.stock === 0
           : true;
-
       return matchSearch && matchStatus;
     });
   }, [physicalProducts, searchQuery, filterStatus]);
 
-  // Filtros aplicados sobre Servicios de Taller (sin alertas de stock)
+  // Filtros aplicados sobre Servicios de Taller
   const filteredServices = useMemo(() => {
     return workshopServices.filter((s) => {
       const q = searchQuery.toLowerCase();
@@ -109,7 +106,7 @@ export default function InventarioPage() {
           <p className="text-sm text-muted-foreground mt-1">
             Gestión centralizada de repuestos físicos y servicios de taller en tiempo real.
           </p>
-          
+
           <div className="flex items-center gap-2 mt-4">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
@@ -125,8 +122,6 @@ export default function InventarioPage() {
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
             </div>
-
-            {/* El filtro por estado (Stock Crítico / Agotados) SOLO aplica sobre Repuestos Físicos */}
             {activeTab === "physical" && (
               <select
                 value={filterStatus}
@@ -140,7 +135,6 @@ export default function InventarioPage() {
             )}
           </div>
         </div>
-
         <div className="flex flex-wrap items-center gap-2 pt-2 xl:pt-10">
           <Button
             variant="outline"
@@ -179,7 +173,6 @@ export default function InventarioPage() {
               {physicalProducts.length}
             </span>
           </TabsTrigger>
-
           <TabsTrigger value="services" className="flex items-center gap-2">
             <Wrench className="h-4 w-4" />
             <span>Servicios de Taller</span>
@@ -188,45 +181,41 @@ export default function InventarioPage() {
             </span>
           </TabsTrigger>
         </TabsList>
-
         <TabsContent value="physical">
           <InventoryTable
             products={filteredPhysicalProducts}
             isLoading={isLoading}
             onSelectProduct={(p) => setSelectedProduct(p)}
+            onEditProduct={(p) => setEditingProduct(p)}
           />
         </TabsContent>
-
         <TabsContent value="services">
           <ServicesTable
             services={filteredServices}
             isLoading={isLoading}
-            onEditService={(srv) => setEditingService(srv)}
+            onEditService={(srv) => setEditingProduct(srv)}
             onSelectService={(srv) => setSelectedProduct(srv)}
           />
         </TabsContent>
       </Tabs>
 
-      {/* Modales y Drawers Retrocompatibles */}
+      {/* Modales y Drawers Unificados */}
       <ProductDetailDrawer
         product={selectedProduct}
         onClose={() => setSelectedProduct(null)}
       />
-
-      <ServiceEditModal
-        product={editingService}
-        isOpen={Boolean(editingService)}
-        onClose={() => setEditingService(null)}
+      <UpdateProductModal
+        product={editingProduct}
+        isOpen={Boolean(editingProduct)}
+        onClose={() => setEditingProduct(null)}
         onSuccess={loadCatalog}
       />
-
       <BulkUploadModal
         isOpen={isBulkModalOpen}
         onClose={() => setIsBulkModalOpen(false)}
         onSuccess={loadCatalog}
         onDownloadTemplate={handleDownloadTemplate}
       />
-
       <ProductCreateModal
         isOpen={isAddModalOpen}
         onClose={() => setIsAddModalOpen(false)}

@@ -36,6 +36,16 @@ export const MASTER_SERVICE_CATEGORIES: ServiceCategory[] = [
   'Alineación y Balanceo',
 ];
 
+/**
+ * Contrato genérico estandarizado para mutaciones de API en el sistema ERP/CMS
+ */
+export interface MutationResult<T = any> {
+  success: boolean;
+  data?: T;
+  error?: string;
+  insertedCount?: number; // Mantenido para retrocompatibilidad con Carga Masiva
+}
+
 export interface Product {
   id: string;
   variant_id?: string;

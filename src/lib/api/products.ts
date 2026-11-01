@@ -1,7 +1,7 @@
 // lib/api/products.ts
 import { createClient } from "@/lib/supabase/client";
 import { requireAuthenticatedUser } from "@/lib/api/auth";
-import { Product, MASTER_PRODUCT_CATEGORIES, MASTER_SERVICE_CATEGORIES } from "@/types";
+import { Product, MASTER_PRODUCT_CATEGORIES, MASTER_SERVICE_CATEGORIES, MutationResult } from "@/types";
 
 export interface GetProductsParams {
   page?: number;
@@ -97,7 +97,10 @@ export interface CreateProductInput {
   is_service?: boolean;
 }
 
-export async function createProduct(input: CreateProductInput): Promise<{ success: boolean; data?: Product; error?: string }> {
+/**
+ * Crea una nueva ficha de producto o servicio retornado MutationResult<Product>
+ */
+export async function createProduct(input: CreateProductInput): Promise<MutationResult<Product>> {
   try {
     const user = await requireAuthenticatedUser();
     const supabase = createClient();
@@ -143,10 +146,13 @@ export async function createProduct(input: CreateProductInput): Promise<{ succes
   }
 }
 
+/**
+ * Actualiza la ficha de un repuesto o servicio existente retornando MutationResult<Product>
+ */
 export async function updateProduct(
   id: string,
   input: Partial<CreateProductInput>
-): Promise<{ success: boolean; data?: Product; error?: string }> {
+): Promise<MutationResult<Product>> {
   try {
     await requireAuthenticatedUser();
     const supabase = createClient();
@@ -178,7 +184,10 @@ export async function updateProduct(
   }
 }
 
-export async function bulkCreateProducts(productsList: CreateProductInput[]): Promise<{ success: boolean; insertedCount: number; error?: string }> {
+/**
+ * Realiza la importación masiva de repuestos en lote retornando MutationResult<number>
+ */
+export async function bulkCreateProducts(productsList: CreateProductInput[]): Promise<MutationResult<number>> {
   try {
     const user = await requireAuthenticatedUser();
     const supabase = createClient();
@@ -204,8 +213,10 @@ export async function bulkCreateProducts(productsList: CreateProductInput[]): Pr
       .select();
 
     if (error) {
-      return { success: false, insertedCount: 0, error: error.message };
+      return { success: false, data: 0, insertedCount: 0, error: error.message };
     }
+
+    const count = insertedProducts?.length || 0;
 
     if (insertedProducts && insertedProducts.length > 0) {
       const initialTransactions = insertedProducts
@@ -221,10 +232,10 @@ export async function bulkCreateProducts(productsList: CreateProductInput[]): Pr
         await supabase.from("inventory_transactions").insert(initialTransactions);
       }
     }
-    return { success: true, insertedCount: insertedProducts?.length || 0 };
+    return { success: true, data: count, insertedCount: count };
   } catch (err) {
     const message = err instanceof Error ? err.message : "Error al procesar la carga masiva.";
-    return { success: false, insertedCount: 0, error: message };
+    return { success: false, data: 0, insertedCount: 0, error: message };
   }
 }
 
