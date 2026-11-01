@@ -1,4 +1,4 @@
-// components/inventory/ProductCreateModal.tsx
+// src/components/inventory/ProductCreateModal.tsx
 "use client";
 
 import { useState, useEffect } from "react";
@@ -19,10 +19,8 @@ export function ProductCreateModal({ isOpen, onClose, onSuccess }: ProductCreate
   const [isService, setIsService] = useState(false);
   const [currentStep, setCurrentStep] = useState(1);
   const [isSavingProduct, setIsSavingProduct] = useState(false);
-  
   const [categories, setCategories] = useState<string[]>([]);
   const [isLoadingCategories, setIsLoadingCategories] = useState(false);
-
   const [formName, setFormName] = useState("");
   const [formBrand, setFormBrand] = useState("Genérico");
   const [formCategory, setFormCategory] = useState("Lubricantes y Aceites");
@@ -30,6 +28,7 @@ export function ProductCreateModal({ isOpen, onClose, onSuccess }: ProductCreate
   const [formOem, setFormOem] = useState("");
   const [formBarcode, setFormBarcode] = useState("");
   const [formPrice, setFormPrice] = useState("");
+  const [formCostPrice, setFormCostPrice] = useState(""); // Campo de costo inicial
   const [formStock, setFormStock] = useState("");
   const [formMinStock, setFormMinStock] = useState("2");
 
@@ -58,6 +57,7 @@ export function ProductCreateModal({ isOpen, onClose, onSuccess }: ProductCreate
     setFormOem("");
     setFormBarcode("");
     setFormPrice("");
+    setFormCostPrice("");
     setFormStock("");
     setFormMinStock("2");
     setIsService(false);
@@ -73,12 +73,21 @@ export function ProductCreateModal({ isOpen, onClose, onSuccess }: ProductCreate
       });
       return;
     }
-
     const priceNum = parseFloat(formPrice);
     if (isNaN(priceNum) || priceNum <= 0) {
       toast({
         title: "Precio inválido",
         description: "El precio de venta debe ser mayor a 0.",
+        type: "warning",
+      });
+      return;
+    }
+
+    const costPriceNum = parseFloat(formCostPrice);
+    if (!isService && (isNaN(costPriceNum) || costPriceNum < 0)) {
+      toast({
+        title: "Costo inválido",
+        description: "Ingresa un costo de compra válido mayor o igual a 0.",
         type: "warning",
       });
       return;
@@ -93,6 +102,7 @@ export function ProductCreateModal({ isOpen, onClose, onSuccess }: ProductCreate
       part_number_factory: isService ? "" : formOem,
       barcode: isService ? "" : formBarcode,
       price: priceNum,
+      cost_price: isService ? 0 : costPriceNum || 0,
       stock: isService ? 0 : parseInt(formStock || "0", 10),
       min_stock: isService ? 0 : parseInt(formMinStock || "2", 10),
       is_service: isService,
@@ -113,7 +123,6 @@ export function ProductCreateModal({ isOpen, onClose, onSuccess }: ProductCreate
       description: `"${formName}" fue ingresado correctamente.`,
       type: "success",
     });
-
     resetForm();
     onSuccess();
     onClose();
@@ -127,7 +136,7 @@ export function ProductCreateModal({ isOpen, onClose, onSuccess }: ProductCreate
             <h3 className="text-lg font-bold">
               {isService ? "Crear Ficha de Servicio de Taller" : "Crear Ficha de Repuesto Físico"}
             </h3>
-            
+
             <div className="inline-flex rounded-lg border border-border bg-background p-1 gap-1">
               <button
                 type="button"
@@ -149,7 +158,6 @@ export function ProductCreateModal({ isOpen, onClose, onSuccess }: ProductCreate
               </button>
             </div>
           </div>
-
           <div className="flex items-center justify-between mt-4">
             {[1, 2].map((step) => (
               <div key={step} className="flex flex-col items-center gap-1 w-1/2 relative">
@@ -161,7 +169,7 @@ export function ProductCreateModal({ isOpen, onClose, onSuccess }: ProductCreate
                   {step}
                 </div>
                 <span className="text-[10px] uppercase font-semibold text-muted-foreground mt-1 text-center">
-                  {step === 1 ? "Identificación" : isService ? "Precio Público" : "Precio & Stock Inicial"}
+                  {step === 1 ? "Identificación" : isService ? "Precio Público" : "Precios, Costo & Stock"}
                 </span>
               </div>
             ))}
@@ -183,7 +191,6 @@ export function ProductCreateModal({ isOpen, onClose, onSuccess }: ProductCreate
                   className="mt-1"
                 />
               </div>
-
               <div>
                 <Label htmlFor="prod_brand">
                   {isService ? "Proveedor / Marca Interna" : "Marca del Producto *"}
@@ -196,7 +203,6 @@ export function ProductCreateModal({ isOpen, onClose, onSuccess }: ProductCreate
                   className="mt-1"
                 />
               </div>
-
               <div>
                 <Label htmlFor="prod_category">Categoría Estandarizada *</Label>
                 {isLoadingCategories ? (
@@ -218,7 +224,6 @@ export function ProductCreateModal({ isOpen, onClose, onSuccess }: ProductCreate
                   </select>
                 )}
               </div>
-
               <div>
                 <Label htmlFor="prod_sku">Código Interno / SKU *</Label>
                 <Input
@@ -229,7 +234,6 @@ export function ProductCreateModal({ isOpen, onClose, onSuccess }: ProductCreate
                   className="mt-1"
                 />
               </div>
-
               {!isService && (
                 <div>
                   <Label htmlFor="prod_oem">N° Parte Fabricante (OEM)</Label>
@@ -247,7 +251,7 @@ export function ProductCreateModal({ isOpen, onClose, onSuccess }: ProductCreate
 
           {currentStep === 2 && (
             <div className="grid grid-cols-2 gap-4">
-              <div className="col-span-2">
+              <div>
                 <Label htmlFor="prod_price">Precio de Venta Público ($) *</Label>
                 <Input
                   id="prod_price"
@@ -258,6 +262,19 @@ export function ProductCreateModal({ isOpen, onClose, onSuccess }: ProductCreate
                   className="mt-1 text-lg font-bold"
                 />
               </div>
+              {!isService && (
+                <div>
+                  <Label htmlFor="prod_cost_price">Costo Compra Unitario ($) *</Label>
+                  <Input
+                    id="prod_cost_price"
+                    type="number"
+                    placeholder="16800"
+                    value={formCostPrice}
+                    onChange={(e) => setFormCostPrice(e.target.value)}
+                    className="mt-1 text-lg font-bold"
+                  />
+                </div>
+              )}
 
               {!isService && (
                 <>
@@ -293,7 +310,6 @@ export function ProductCreateModal({ isOpen, onClose, onSuccess }: ProductCreate
           <Button variant="ghost" onClick={() => (currentStep === 1 ? onClose() : setCurrentStep(1))}>
             {currentStep === 1 ? "Cancelar" : "Atrás"}
           </Button>
-
           {currentStep < 2 ? (
             <Button onClick={() => setCurrentStep(2)}>
               Siguiente <ChevronRight className="ml-2 h-4 w-4" />

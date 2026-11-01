@@ -23,8 +23,8 @@ export function UpdateProductModal({ product, isOpen, onClose, onSuccess }: Upda
   const [brand, setBrand] = useState("");
   const [category, setCategory] = useState("");
   const [price, setPrice] = useState("");
+  const [costPrice, setCostPrice] = useState(""); // Campo para ajustar costo
   const [minStock, setMinStock] = useState("2");
-
   const [availableCategories, setAvailableCategories] = useState<string[]>([]);
   const [isUpdating, setIsUpdating] = useState(false);
   const [isLoadingCategories, setIsLoadingCategories] = useState(false);
@@ -35,11 +35,11 @@ export function UpdateProductModal({ product, isOpen, onClose, onSuccess }: Upda
       setSku(product.sku || "");
       setBrand(product.brand || "Genérico");
       setPrice(product.price !== undefined ? product.price.toString() : "0");
+      setCostPrice(product.cost_price !== undefined ? product.cost_price.toString() : "0");
       setMinStock(product.min_stock !== undefined ? product.min_stock.toString() : "2");
 
       const isSrv = Boolean(product.is_service);
       setIsLoadingCategories(true);
-
       getCategories(isSrv)
         .then((cats) => {
           setAvailableCategories(cats);
@@ -65,6 +65,12 @@ export function UpdateProductModal({ product, isOpen, onClose, onSuccess }: Upda
       return;
     }
 
+    const costPriceNum = parseFloat(costPrice);
+    if (!isService && (isNaN(costPriceNum) || costPriceNum < 0)) {
+      toast({ title: "Costo inválido", description: "Ingresa un costo de compra válido.", type: "warning" });
+      return;
+    }
+
     const minStockNum = parseInt(minStock, 10);
     if (!isService && (isNaN(minStockNum) || minStockNum < 0)) {
       toast({ title: "Stock Mínimo inválido", description: "Ingresa un valor entero mayor o igual a 0.", type: "warning" });
@@ -72,7 +78,6 @@ export function UpdateProductModal({ product, isOpen, onClose, onSuccess }: Upda
     }
 
     setIsUpdating(true);
-
     const payload = isService
       ? {
           name: name.trim(),
@@ -84,6 +89,7 @@ export function UpdateProductModal({ product, isOpen, onClose, onSuccess }: Upda
           brand: brand.trim(),
           category: category,
           price: priceNum,
+          cost_price: costPriceNum,
           min_stock: minStockNum,
         };
 
@@ -100,7 +106,6 @@ export function UpdateProductModal({ product, isOpen, onClose, onSuccess }: Upda
       description: `"${name}" se guardó correctamente.`,
       type: "success",
     });
-
     onSuccess();
     onClose();
   };
@@ -203,21 +208,34 @@ export function UpdateProductModal({ product, isOpen, onClose, onSuccess }: Upda
                 required
               />
             </div>
-
             {!isService && (
               <div>
-                <Label htmlFor="edit_min_stock">Stock Mínimo de Alerta *</Label>
+                <Label htmlFor="edit_cost_price">Costo Compra Base ($) *</Label>
                 <Input
-                  id="edit_min_stock"
+                  id="edit_cost_price"
                   type="number"
-                  value={minStock}
-                  onChange={(e) => setMinStock(e.target.value)}
-                  className="mt-1 font-semibold"
+                  value={costPrice}
+                  onChange={(e) => setCostPrice(e.target.value)}
+                  className="mt-1 text-lg font-bold"
                   required
                 />
               </div>
             )}
           </div>
+
+          {!isService && (
+            <div>
+              <Label htmlFor="edit_min_stock">Stock Mínimo de Alerta *</Label>
+              <Input
+                id="edit_min_stock"
+                type="number"
+                value={minStock}
+                onChange={(e) => setMinStock(e.target.value)}
+                className="mt-1 font-semibold"
+                required
+              />
+            </div>
+          )}
 
           <div className="flex items-center justify-end gap-2 pt-4 border-t border-border mt-2">
             <Button type="button" variant="ghost" onClick={onClose}>

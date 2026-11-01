@@ -1,3 +1,4 @@
+// src/app/(dashboard)/entradas/page.tsx
 "use client";
 
 import { useState, useEffect } from "react";
@@ -16,7 +17,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { toast } from "@/components/ui/toast";
-import { Truck, Plus, FileText, ArrowUpRight, Loader2 } from "lucide-react";
+import { Truck, Plus, FileText, Loader2 } from "lucide-react";
 
 export default function EntradasPage() {
   const [catalog, setCatalog] = useState<Product[]>([]);
@@ -26,22 +27,22 @@ export default function EntradasPage() {
   const [selectedProductId, setSelectedProductId] = useState<string>("");
   const [invoiceNumber, setInvoiceNumber] = useState("");
   const [quantityInput, setQuantityInput] = useState<string>("10");
+  const [costPriceInput, setCostPriceInput] = useState<string>("0"); // Nuevo campo
   const [salePriceInput, setSalePriceInput] = useState<string>("0");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const loadData = async () => {
     setIsLoadingCatalog(true);
     const [prods, txs] = await Promise.all([
-      getProducts(),
+      getProducts({ is_service: false }),
       getAllInventoryTransactions(),
     ]);
-
     setCatalog(prods);
     setTransactions(txs.filter((t) => t.type === "PURCHASE_IN" || t.type === "INITIAL_STOCK"));
-
     if (prods.length > 0) {
       setSelectedProductId(prods[0].id);
       setSalePriceInput(prods[0].price.toString());
+      setCostPriceInput((prods[0].cost_price || 0).toString());
     }
     setIsLoadingCatalog(false);
   };
@@ -53,7 +54,10 @@ export default function EntradasPage() {
   const handleProductSelectChange = (prodId: string) => {
     setSelectedProductId(prodId);
     const prod = catalog.find((p) => p.id === prodId);
-    if (prod) setSalePriceInput(prod.price.toString());
+    if (prod) {
+      setSalePriceInput(prod.price.toString());
+      setCostPriceInput((prod.cost_price || 0).toString());
+    }
   };
 
   const handleSubmitEntry = async (e: React.FormEvent) => {
@@ -61,10 +65,16 @@ export default function EntradasPage() {
     if (!selectedProductId) return;
 
     const qty = parseInt(quantityInput, 10);
+    const costPrice = parseFloat(costPriceInput);
     const newPrice = parseFloat(salePriceInput);
 
     if (isNaN(qty) || qty <= 0) {
       toast({ title: "Cantidad inválida", description: "Ingresa un número mayor a 0.", type: "warning" });
+      return;
+    }
+
+    if (isNaN(costPrice) || costPrice < 0) {
+      toast({ title: "Costo inválido", description: "El costo de compra no puede ser negativo.", type: "warning" });
       return;
     }
 
@@ -73,9 +83,9 @@ export default function EntradasPage() {
       productId: selectedProductId,
       quantity: qty,
       referenceDocument: invoiceNumber || "FAC-RECEPCION",
+      newCostPrice: costPrice,
       newSalePrice: newPrice,
     });
-
     setIsSubmitting(false);
 
     if (!res.success) {
@@ -83,7 +93,7 @@ export default function EntradasPage() {
       return;
     }
 
-    toast({ title: "Entrada Guardada en BD", description: `Recepción agregada al inventario real.`, type: "success" });
+    toast({ title: "Entrada Guardada en BD", description: `Recepción agregada y costo actualizado.`, type: "success" });
     setIsModalOpen(false);
     setInvoiceNumber("");
     loadData();
@@ -185,7 +195,7 @@ export default function EntradasPage() {
                 <Label htmlFor="sku_select">Seleccionar Repuesto</Label>
                 <select
                   id="sku_select"
-                  className="flex h-9 w-full rounded-lg border border-input bg-background px-2.5 py-1 text-sm text-foreground outline-none"
+                  className="flex h-9 w-full rounded-lg border border-input bg-background px-2.5 py-1 text-sm text-foreground outline-none cursor-pointer"
                   value={selectedProductId}
                   onChange={(e) => handleProductSelectChange(e.target.value)}
                 >
@@ -196,9 +206,10 @@ export default function EntradasPage() {
                   ))}
                 </select>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+
+              <div className="grid grid-cols-3 gap-3">
                 <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="quantity">Cantidad a Sumar</Label>
+                  <Label htmlFor="quantity">Cantidad *</Label>
                   <Input
                     id="quantity"
                     type="number"
@@ -209,16 +220,29 @@ export default function EntradasPage() {
                   />
                 </div>
                 <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="sale_price">Nuevo Precio Venta ($)</Label>
+                  <Label htmlFor="cost_price">Costo Compra ($) *</Label>
+                  <Input
+                    id="cost_price"
+                    type="number"
+                    min="0"
+                    value={costPriceInput}
+                    onChange={(e) => setCostPriceInput(e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="sale_price">Precio Venta ($) *</Label>
                   <Input
                     id="sale_price"
                     type="number"
+                    min="0"
                     value={salePriceInput}
                     onChange={(e) => setSalePriceInput(e.target.value)}
                     required
                   />
                 </div>
               </div>
+
               <div className="flex flex-row gap-2 pt-3 w-full border-t border-border mt-2">
                 <Button type="button" variant="outline" className="flex-1" onClick={() => setIsModalOpen(false)}>
                   Cancelar

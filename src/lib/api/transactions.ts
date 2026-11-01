@@ -7,6 +7,7 @@ export interface StockEntryInput {
   quantity: number;
   referenceDocument: string;
   newSalePrice?: number;
+  newCostPrice?: number; // Parámetro obligatorio para COGS
 }
 
 export interface POSCheckoutItem {
@@ -37,13 +38,13 @@ export async function registerStockEntry(input: StockEntryInput): Promise<{ succ
       p_quantity: Number(input.quantity),
       p_reference_document: input.referenceDocument,
       p_new_sale_price: input.newSalePrice || 0,
+      p_new_cost_price: input.newCostPrice || 0,
       p_cashier_email: user.email,
     });
 
     if (error) {
       return { success: false, error: error.message };
     }
-
     return (data as { success: boolean; error?: string }) || { success: true };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Error al registrar la entrada.";
@@ -56,14 +57,13 @@ export async function getAllInventoryTransactions(): Promise<any[]> {
     const supabase = createClient();
     const { data, error } = await supabase
       .from("inventory_transactions")
-      .select("*, products(sku, name, price)")
+      .select("*, products(sku, name, price, cost_price)")
       .order("created_at", { ascending: false });
 
     if (error) {
       console.error("Error al obtener transacciones:", error.message);
       return [];
     }
-
     return data || [];
   } catch (error) {
     console.error("Error de conexión al consultar transacciones:", error);
@@ -80,7 +80,6 @@ export async function processPOSSale(
   try {
     const user = await requireAuthenticatedUser();
     const supabase = createClient();
-
     const formattedRefDoc = referenceDoc.includes(paymentMethod)
       ? referenceDoc
       : `${referenceDoc} - ${paymentMethod}`;
@@ -93,7 +92,6 @@ export async function processPOSSale(
     });
 
     if (error) {
-      // Inserción directa garantizada en caso de no existir RPC almacenado
       for (const item of items) {
         if (!item.is_service && item.product_id) {
           const { data: prod } = await supabase
@@ -130,7 +128,6 @@ export async function processPOSSale(
     if (res && !res.success) {
       return { success: false, error: res.error || "No se pudo procesar la venta." };
     }
-
     return { success: true };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Error general al procesar la venta.";
@@ -142,12 +139,10 @@ export async function getTodaySales(): Promise<TodaySaleRow[]> {
   try {
     const supabase = createClient();
     const { data, error } = await supabase.rpc("get_today_sales");
-
     if (error || !data) {
       console.error("Error obteniendo ventas de hoy vía RPC:", error?.message);
       return [];
     }
-
     return data as TodaySaleRow[];
   } catch (error) {
     console.error("Error al obtener ventas de hoy:", error);

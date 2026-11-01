@@ -1,4 +1,4 @@
-// lib/validations.ts
+// src/lib/validations.ts
 import { z } from "zod";
 
 export const loginSchema = z.object({
@@ -14,6 +14,7 @@ export const productSchema = z.object({
   part_number_factory: z.string().max(100).optional(),
   barcode: z.string().max(100).optional(),
   price: z.coerce.number().positive("El precio de venta debe ser mayor a 0"),
+  cost_price: z.coerce.number().nonnegative("El costo de compra no puede ser negativo").default(0),
   stock: z.coerce.number().int().nonnegative("El stock no puede ser negativo"),
   min_stock: z.coerce.number().int().nonnegative("El stock mínimo no puede ser negativo"),
   is_service: z.boolean().default(false),
