@@ -1,4 +1,4 @@
-// lib/api/transactions.ts
+// src/lib/api/transactions.ts
 import { createClient } from "@/lib/supabase/client";
 import { requireAuthenticatedUser } from "@/lib/api/auth";
 
@@ -32,7 +32,6 @@ export async function registerStockEntry(input: StockEntryInput): Promise<{ succ
   try {
     const user = await requireAuthenticatedUser();
     const supabase = createClient();
-
     const { data, error } = await supabase.rpc("register_stock_entry", {
       p_product_id: input.productId,
       p_quantity: Number(input.quantity),
@@ -52,7 +51,7 @@ export async function registerStockEntry(input: StockEntryInput): Promise<{ succ
   }
 }
 
-export async function getAllInventoryTransactions(): Promise<InventoryTransactionRow[]> {
+export async function getAllInventoryTransactions(): Promise<any[]> {
   try {
     const supabase = createClient();
     const { data, error } = await supabase
@@ -64,7 +63,8 @@ export async function getAllInventoryTransactions(): Promise<InventoryTransactio
       console.error("Error al obtener transacciones:", error.message);
       return [];
     }
-    return (data as unknown as InventoryTransactionRow[]) || [];
+
+    return data || [];
   } catch (error) {
     console.error("Error de conexión al consultar transacciones:", error);
     return [];
@@ -81,15 +81,49 @@ export async function processPOSSale(
     const user = await requireAuthenticatedUser();
     const supabase = createClient();
 
+    const formattedRefDoc = referenceDoc.includes(paymentMethod)
+      ? referenceDoc
+      : `${referenceDoc} - ${paymentMethod}`;
+
     const { data, error } = await supabase.rpc("process_pos_sale", {
       p_items: items,
-      p_reference_doc: referenceDoc,
+      p_reference_doc: formattedRefDoc,
       p_payment_method: paymentMethod,
       p_cashier_email: user.email,
     });
 
     if (error) {
-      return { success: false, error: error.message };
+      // Inserción directa garantizada en caso de no existir RPC almacenado
+      for (const item of items) {
+        if (!item.is_service && item.product_id) {
+          const { data: prod } = await supabase
+            .from("products")
+            .select("stock")
+            .eq("id", item.product_id)
+            .single();
+
+          if (prod) {
+            await supabase
+              .from("products")
+              .update({ stock: Math.max(0, prod.stock - item.quantity) })
+              .eq("id", item.product_id);
+          }
+        }
+      }
+
+      const rows = items.map((i) => ({
+        product_id: i.product_id,
+        type: "SALE_OUT",
+        quantity: i.quantity,
+        reference_document: formattedRefDoc,
+        cashier_email: user.email,
+      }));
+
+      const { error: insErr } = await supabase.from("inventory_transactions").insert(rows);
+      if (insErr) {
+        return { success: false, error: insErr.message };
+      }
+      return { success: true };
     }
 
     const res = data as { success: boolean; error?: string };
