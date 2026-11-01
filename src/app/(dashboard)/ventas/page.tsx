@@ -1,15 +1,17 @@
-// app/(dashboard)/ventas/page.tsx
+// src/app/(dashboard)/ventas/page.tsx
 "use client";
 
 import { useState, useEffect, useRef, useMemo } from "react";
 import { getProducts } from "@/lib/api/products";
 import { processPOSSale } from "@/lib/api/transactions";
+import { getActiveCashSession, CashSession } from "@/lib/api/cash";
 import { Product, CartItem } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "@/components/ui/toast";
-import { Search, Tag, Loader2 } from "lucide-react";
+import { Search, Tag, Loader2, AlertTriangle, Lock } from "lucide-react";
+import Link from "next/link";
 import { POSServiceShortcuts } from "@/components/ventas/POSServiceShortcuts";
 import { CartSummary } from "@/components/ventas/CartSummary";
 import { POSCheckoutSuccessModal } from "@/components/ventas/POSCheckoutSuccessModal";
@@ -17,6 +19,7 @@ import { POSCheckoutSuccessModal } from "@/components/ventas/POSCheckoutSuccessM
 export default function VentasPage() {
   const [physicalProducts, setPhysicalProducts] = useState<Product[]>([]);
   const [workshopServices, setWorkshopServices] = useState<Product[]>([]);
+  const [activeSession, setActiveSession] = useState<CashSession | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [cart, setCart] = useState<CartItem[]>([]);
   const [paymentMethod, setPaymentMethod] = useState<"Efectivo" | "Transferencia" | "Tarjeta">("Efectivo");
@@ -34,12 +37,14 @@ export default function VentasPage() {
   const loadPOSData = async () => {
     setIsLoading(true);
     try {
-      const [prodsData, srvsData] = await Promise.all([
+      const [prodsData, srvsData, sessionData] = await Promise.all([
         getProducts({ is_service: false }),
         getProducts({ is_service: true }),
+        getActiveCashSession(),
       ]);
       setPhysicalProducts(prodsData);
       setWorkshopServices(srvsData);
+      setActiveSession(sessionData);
     } catch (error) {
       console.error("Error al cargar datos en el POS:", error);
     } finally {
@@ -52,12 +57,18 @@ export default function VentasPage() {
     if (searchInputRef.current) searchInputRef.current.focus();
   }, []);
 
-  // Agregar Repuesto Físico al carrito (validando stock real)
   const addProductToCart = (product: Product): boolean => {
+    if (!activeSession) {
+      safeToast({
+        title: "Caja Cerrada",
+        description: "Debe abrir una sesión de caja en Historial antes de ingresar ítems.",
+        type: "warning",
+      });
+      return false;
+    }
     const targetVariantId = product.variant_id || product.id;
     const existingItem = cart.find((item) => item.variant_id === targetVariantId);
     const currentQtyInCart = existingItem ? existingItem.quantity : 0;
-
     if (!product.is_service && currentQtyInCart >= product.stock) {
       safeToast({
         title: "Límite de stock",
@@ -66,7 +77,6 @@ export default function VentasPage() {
       });
       return false;
     }
-
     setCart((prev) => {
       const index = prev.findIndex((item) => item.variant_id === targetVariantId);
       if (index > -1) {
@@ -88,7 +98,6 @@ export default function VentasPage() {
         },
       ];
     });
-
     safeToast({
       title: "Repuesto Agregado",
       description: `${product.name} agregado al ticket.`,
@@ -97,8 +106,15 @@ export default function VentasPage() {
     return true;
   };
 
-  // Agregar Servicio de Taller Dinámico (desde BD) al carrito
   const addServiceProductToCart = (serviceProduct: Product) => {
+    if (!activeSession) {
+      safeToast({
+        title: "Caja Cerrada",
+        description: "Debe abrir una sesión de caja en Historial antes de ingresar ítems.",
+        type: "warning",
+      });
+      return;
+    }
     const targetVariantId = serviceProduct.id;
     setCart((prev) => {
       const existing = prev.find((item) => item.variant_id === targetVariantId);
@@ -116,12 +132,11 @@ export default function VentasPage() {
           name: serviceProduct.name,
           price: serviceProduct.price,
           quantity: 1,
-          stock: 999999, // Stock virtual ilimitado
+          stock: 999999,
           is_service: true,
         },
       ];
     });
-
     safeToast({
       title: "Servicio Agregado",
       description: `${serviceProduct.name} agregado al ticket.`,
@@ -130,9 +145,9 @@ export default function VentasPage() {
   };
 
   const updateQuantity = (variant_id: string, delta: number) => {
+    if (!activeSession) return;
     const targetItem = cart.find((item) => item.variant_id === variant_id);
     if (!targetItem) return;
-
     if (delta > 0 && !targetItem.is_service && targetItem.quantity + delta > targetItem.stock) {
       safeToast({
         title: "Stock máximo",
@@ -141,7 +156,6 @@ export default function VentasPage() {
       });
       return;
     }
-
     setCart((prev) =>
       prev
         .map((item) => {
@@ -160,6 +174,14 @@ export default function VentasPage() {
   };
 
   const handleCheckout = async () => {
+    if (!activeSession) {
+      safeToast({
+        title: "Turno No Activo",
+        description: "Inicie turno en el módulo de Historial y Caja para procesar ventas.",
+        type: "warning",
+      });
+      return;
+    }
     if (cart.length === 0) return;
     setIsProcessing(true);
     try {
@@ -172,10 +194,8 @@ export default function VentasPage() {
         quantity: i.quantity,
         is_service: i.is_service,
       }));
-
       const totalAmount = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
       const res = await processPOSSale(checkoutItems, refDoc, paymentMethod, totalAmount);
-
       if (!res.success) {
         safeToast({
           title: "Error al registrar la venta",
@@ -184,7 +204,6 @@ export default function VentasPage() {
         });
         return;
       }
-
       safeToast({
         title: "Venta Exitosa",
         description: `Transacción procesada correctamente.`,
@@ -205,7 +224,6 @@ export default function VentasPage() {
     }
   };
 
-  // Filtrado exclusivo para Repuestos Físicos en el buscador
   const filteredPhysicalProducts = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     if (!q) return physicalProducts;
@@ -220,23 +238,49 @@ export default function VentasPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-1">
-        <h1 className="text-3xl font-bold tracking-tight">Terminal de Ventas (POS)</h1>
-        <p className="text-muted-foreground text-sm">
-          Facturación en mesón, cobro de servicios y rebaja de stock físico en tiempo real.
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex flex-col gap-1">
+          <h1 className="text-3xl font-bold tracking-tight">Terminal de Ventas (POS)</h1>
+          <p className="text-muted-foreground text-sm">
+            Facturación en mesón, cobro de servicios y rebaja de stock físico en tiempo real.
+          </p>
+        </div>
+        {!isLoading && !activeSession && (
+          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-red-500/10 text-red-500 border border-red-500/20">
+            <Lock className="h-3.5 w-3.5" /> Caja Cerrada
+          </span>
+        )}
       </div>
+
+      {!isLoading && !activeSession && (
+        <div className="p-4 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-500 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 animate-in fade-in-0 duration-200">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-lg bg-amber-500/20">
+              <AlertTriangle className="h-5 w-5 shrink-0 text-amber-500" />
+            </div>
+            <div className="flex flex-col">
+              <span className="font-bold text-sm">Sesión de Caja Inactiva</span>
+              <span className="text-xs opacity-90">
+                Se requiere un turno abierto para registrar ventas. Las funciones de facturación y carrito han sido bloqueadas.
+              </span>
+            </div>
+          </div>
+          <Link href="/historial">
+            <Button size="sm" className="bg-amber-600 hover:bg-amber-700 text-white font-semibold whitespace-nowrap">
+              Abrir Caja en Historial
+            </Button>
+          </Link>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         <div className="lg:col-span-7 flex flex-col gap-4">
-          {/* Accesos Rápidos a Servicios Dinámicos desde BD */}
           <POSServiceShortcuts
             services={workshopServices}
             isLoading={isLoading}
             onAddService={addServiceProductToCart}
           />
 
-          {/* Barra de Búsqueda (Sin la insignia 'Escáner Activo') */}
           <div className="relative">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -249,7 +293,6 @@ export default function VentasPage() {
             />
           </div>
 
-          {/* Tabla de Repuestos Físicos Exclusiva */}
           <div className="rounded-xl border border-border bg-background/50 overflow-hidden">
             <Table>
               <TableHeader className="bg-muted/50">
@@ -306,7 +349,11 @@ export default function VentasPage() {
                           </span>
                         </TableCell>
                         <TableCell className="text-center">
-                          <Button size="sm" disabled={isOutOfStock} onClick={() => addProductToCart(product)}>
+                          <Button
+                            size="sm"
+                            disabled={isOutOfStock || !activeSession}
+                            onClick={() => addProductToCart(product)}
+                          >
                             {isOutOfStock ? "Agotado" : "Agregar"}
                           </Button>
                         </TableCell>
@@ -319,12 +366,12 @@ export default function VentasPage() {
           </div>
         </div>
 
-        {/* Resumen del Ticket de Venta (CartSummary) */}
         <div className="lg:col-span-5">
           <CartSummary
             cart={cart}
             paymentMethod={paymentMethod}
             isProcessing={isProcessing}
+            hasActiveSession={Boolean(activeSession)}
             onUpdateQuantity={updateQuantity}
             onRemoveFromCart={removeFromCart}
             onPaymentMethodChange={setPaymentMethod}

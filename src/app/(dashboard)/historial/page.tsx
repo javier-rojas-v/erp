@@ -1,3 +1,4 @@
+// src/app/(dashboard)/historial/page.tsx
 "use client";
 
 import { useState, useEffect } from "react";
@@ -45,23 +46,42 @@ export default function HistorialCajaPage() {
     loadData();
   }, []);
 
-  // Cálculos de KPI Reales
   const activeSales = salesHistory.filter((s) => s.status === "COMPLETED");
   const totalEfectivo = activeSales.filter((s) => s.paymentMethod === "Efectivo").reduce((acc, s) => acc + s.total, 0);
   const totalTransferencia = activeSales.filter((s) => s.paymentMethod === "Transferencia").reduce((acc, s) => acc + s.total, 0);
   const totalTarjeta = activeSales.filter((s) => s.paymentMethod === "Tarjeta").reduce((acc, s) => acc + s.total, 0);
   const totalGeneral = totalEfectivo + totalTransferencia + totalTarjeta;
 
-  const filteredSales = salesHistory.filter((sale) =>
-      sale.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      sale.paymentMethod.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const formatDateCL = (dateVal: string | undefined) => {
+    if (!dateVal) return "N/D";
+    try {
+      const d = new Date(dateVal);
+      if (isNaN(d.getTime())) return dateVal;
+      return d.toLocaleString("es-CL", {
+        dateStyle: "short",
+        timeStyle: "medium",
+        timeZone: "America/Santiago",
+      });
+    } catch {
+      return dateVal;
+    }
+  };
+
+  const filteredSales = salesHistory.filter((sale) => {
+    const q = searchQuery.toLowerCase();
+    const formattedId = sale.id ? `VEN-${sale.id.slice(0, 8).toUpperCase()}` : "";
+    return (
+      sale.id?.toLowerCase().includes(q) ||
+      formattedId.toLowerCase().includes(q) ||
+      sale.paymentMethod?.toLowerCase().includes(q) ||
+      sale.cashier?.toLowerCase().includes(q)
+    );
+  });
 
   const handleOpenShift = async () => {
     setIsSubmitting(true);
     const res = await openCashSession(0);
     setIsSubmitting(false);
-
     if (!res.success) {
       toast({ title: "Error", description: "No se pudo abrir la caja.", type: "error" });
       return;
@@ -74,27 +94,23 @@ export default function HistorialCajaPage() {
   const handleCloseShiftSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeSession) return;
-
     const realAmount = parseFloat(cashCounted);
     if (isNaN(realAmount) || realAmount < 0) {
       toast({ title: "Monto inválido", description: "Ingresa el conteo físico correcto.", type: "warning" });
       return;
     }
-
     setIsSubmitting(true);
     const diff = realAmount - totalEfectivo;
     const res = await closeCashSession(activeSession.id, totalEfectivo, realAmount);
     setIsSubmitting(false);
-
     if (!res.success) {
       toast({ title: "Error al cerrar", description: res.error, type: "error" });
       return;
     }
-
     setClosedSessionSummary({ monto_final_sistema: totalEfectivo, monto_final_real: realAmount, diferencia: diff });
     toast({ 
       title: "Caja Cerrada", 
-      description: diff === 0 ? "Caja totalmente cuadrada." : `Cierre con descuadre ($${diff.toLocaleString("es-CL")}).`, 
+      description: diff === 0 ? "Caja totalmente cuadrada." : `Cierre con descuadre ($${diff.toLocaleString("es-CL")}).`,
       type: diff === 0 ? "success" : "warning" 
     });
     setIsClosingModalOpen(false);
@@ -114,7 +130,7 @@ export default function HistorialCajaPage() {
             </span>
           </div>
           <p className="text-muted-foreground mt-1 text-sm">
-             Auditoría de transacciones en mesón y arqueo de caja diario para control financiero.
+            Auditoría de transacciones en mesón y arqueo de caja diario para control financiero.
           </p>
         </div>
         <div>
@@ -133,7 +149,6 @@ export default function HistorialCajaPage() {
         </div>
       </div>
 
-      {/* Restaurado: Alerta de Auditoría Visual */}
       {closedSessionSummary && (
         <div className="p-4 rounded-xl border border-border bg-card shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
@@ -154,7 +169,6 @@ export default function HistorialCajaPage() {
         </div>
       )}
 
-      {/* Restaurado: KPIs del historial */}
       <div className="grid gap-4 md:grid-cols-4">
         <div className="flex flex-col justify-between p-5 border border-border rounded-xl bg-card text-card-foreground shadow-sm">
           <div className="flex items-center justify-between text-muted-foreground text-sm font-medium">
@@ -212,7 +226,6 @@ export default function HistorialCajaPage() {
             />
           </div>
         </div>
-
         <div className="rounded-xl border border-border bg-background/50 overflow-hidden">
           <Table>
             <TableHeader className="bg-muted/50">
@@ -241,9 +254,14 @@ export default function HistorialCajaPage() {
               ) : (
                 filteredSales.map((sale) => (
                   <TableRow key={sale.id} className="border-border hover:bg-muted/30">
-                    <TableCell className="font-mono text-sm">VEN-{(sale.id).slice(0, 4).toUpperCase()}</TableCell>
-                    <TableCell className="text-xs text-muted-foreground flex items-center gap-1.5 pt-4">
-                      <Calendar className="h-3.5 w-3.5" /> Hoy, {sale.date}
+                    <TableCell className="font-mono text-sm font-bold">
+                      VEN-{sale.id ? sale.id.slice(0, 8).toUpperCase() : "00000000"}
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      <div className="flex items-center gap-1.5 font-mono">
+                        <Calendar className="h-3.5 w-3.5 text-primary shrink-0" />
+                        <span>{formatDateCL(sale.created_at || sale.date)}</span>
+                      </div>
                     </TableCell>
                     <TableCell>
                       <span className="inline-flex items-center rounded-md bg-secondary px-2 py-1 text-xs font-medium text-secondary-foreground">
@@ -272,6 +290,7 @@ export default function HistorialCajaPage() {
                 <h3 className="text-lg font-bold">Arqueo de Caja Diario</h3>
               </div>
             </div>
+
             <form onSubmit={handleCloseShiftSubmit} className="flex flex-col gap-4">
               <div className="flex flex-col gap-1.5">
                 <span className="text-xs font-medium text-muted-foreground">Resumen del Sistema:</span>
@@ -286,6 +305,7 @@ export default function HistorialCajaPage() {
                   </div>
                 </div>
               </div>
+
               <div className="flex flex-col gap-2">
                 <label className="text-sm font-medium">Conteo Físico de Efectivo ($)</label>
                 <Input
@@ -296,16 +316,18 @@ export default function HistorialCajaPage() {
                   required
                 />
               </div>
+
               {cashCounted !== "" && (
-                 <div className={`p-3 rounded-lg border text-sm flex items-center gap-2 ${parseFloat(cashCounted) === totalEfectivo ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" : "bg-amber-500/10 text-amber-500 border-amber-500/20"}`}>
-                   <ShieldAlert className="h-4 w-4 shrink-0" />
-                   <span>
-                     {parseFloat(cashCounted) === totalEfectivo
-                       ? "Caja cuadrada sin diferencias."
-                       : `Diferencia a registrar: $${(parseFloat(cashCounted) - totalEfectivo).toLocaleString("es-CL")}`}
-                   </span>
-                 </div>
+                <div className={`p-3 rounded-lg border text-sm flex items-center gap-2 ${parseFloat(cashCounted) === totalEfectivo ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" : "bg-amber-500/10 text-amber-500 border-amber-500/20"}`}>
+                  <ShieldAlert className="h-4 w-4 shrink-0" />
+                  <span>
+                    {parseFloat(cashCounted) === totalEfectivo
+                      ? "Caja cuadrada sin diferencias."
+                      : `Diferencia a registrar: $${(parseFloat(cashCounted) - totalEfectivo).toLocaleString("es-CL")}`}
+                  </span>
+                </div>
               )}
+
               <div className="flex gap-2 pt-2">
                 <Button type="button" variant="outline" className="flex-1" onClick={() => setIsClosingModalOpen(false)}>Cancelar</Button>
                 <Button type="submit" className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold" disabled={isSubmitting}>

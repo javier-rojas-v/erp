@@ -1,14 +1,15 @@
-// components/ventas/CartSummary.tsx
+// src/components/ventas/CartSummary.tsx
 "use client";
 
 import { CartItem } from "@/types";
 import { Button } from "@/components/ui/button";
-import { ShoppingCart, Minus, Plus, Trash2, Loader2 } from "lucide-react";
+import { ShoppingCart, Minus, Plus, Trash2, Loader2, Lock } from "lucide-react";
 
 interface CartSummaryProps {
   cart: CartItem[];
   paymentMethod: "Efectivo" | "Transferencia" | "Tarjeta";
   isProcessing: boolean;
+  hasActiveSession?: boolean;
   onUpdateQuantity: (variantId: string, delta: number) => void;
   onRemoveFromCart: (variantId: string) => void;
   onPaymentMethodChange: (method: "Efectivo" | "Transferencia" | "Tarjeta") => void;
@@ -19,6 +20,7 @@ export function CartSummary({
   cart,
   paymentMethod,
   isProcessing,
+  hasActiveSession = true,
   onUpdateQuantity,
   onRemoveFromCart,
   onPaymentMethodChange,
@@ -35,9 +37,16 @@ export function CartSummary({
           <h2 className="text-lg font-semibold tracking-tight">Ticket de Venta Actual</h2>
         </div>
         <span className="text-xs text-muted-foreground bg-secondary px-2.5 py-1 rounded-md font-mono font-semibold">
-          {totalItemsCount} Ítems
+          {totalItemsCount} ítems
         </span>
       </div>
+
+      {!hasActiveSession && (
+        <div className="mt-3 p-3 rounded-lg border border-amber-500/30 bg-amber-500/10 text-amber-500 text-xs font-medium flex items-center gap-2">
+          <Lock className="h-4 w-4 shrink-0" />
+          <span>Caja cerrada. Abre un turno en Historial para emitir ventas.</span>
+        </div>
+      )}
 
       <div className="flex flex-col gap-3 py-4 max-h-[300px] overflow-y-auto divide-y divide-border/50">
         {cart.length === 0 ? (
@@ -61,11 +70,21 @@ export function CartSummary({
                 </span>
               </div>
               <div className="flex items-center gap-1.5">
-                <Button variant="outline" size="icon-xs" onClick={() => onUpdateQuantity(item.variant_id, -1)}>
+                <Button
+                  variant="outline"
+                  size="icon-xs"
+                  onClick={() => onUpdateQuantity(item.variant_id, -1)}
+                  disabled={!hasActiveSession}
+                >
                   <Minus className="h-3 w-3" />
                 </Button>
                 <span className="text-xs font-semibold w-6 text-center">{item.quantity}</span>
-                <Button variant="outline" size="icon-xs" onClick={() => onUpdateQuantity(item.variant_id, 1)}>
+                <Button
+                  variant="outline"
+                  size="icon-xs"
+                  onClick={() => onUpdateQuantity(item.variant_id, 1)}
+                  disabled={!hasActiveSession}
+                >
                   <Plus className="h-3 w-3" />
                 </Button>
                 <Button
@@ -92,6 +111,7 @@ export function CartSummary({
               size="sm"
               onClick={() => onPaymentMethodChange(method)}
               className="text-xs font-medium"
+              disabled={!hasActiveSession}
             >
               {method}
             </Button>
@@ -105,12 +125,14 @@ export function CartSummary({
           <span className="text-primary text-2xl font-black">${totalAmount.toLocaleString("es-CL")}</span>
         </div>
         <Button
-          className="w-full h-11 bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
-          disabled={cart.length === 0 || isProcessing}
+          className="w-full h-11 bg-emerald-600 hover:bg-emerald-700 text-white font-bold disabled:bg-muted disabled:text-muted-foreground"
+          disabled={cart.length === 0 || isProcessing || !hasActiveSession}
           onClick={onCheckout}
         >
           {isProcessing ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-          Completar Venta ({paymentMethod})
+          {!hasActiveSession
+            ? "Caja Cerrada (Requiere Apertura)"
+            : `Completar Venta (${paymentMethod})`}
         </Button>
       </div>
     </div>
