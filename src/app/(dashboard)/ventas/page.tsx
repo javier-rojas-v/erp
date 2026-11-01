@@ -9,13 +9,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "@/components/ui/toast";
-import { Search, Tag, Barcode, Loader2 } from "lucide-react";
+import { Search, Tag, Loader2 } from "lucide-react";
 import { POSServiceShortcuts } from "@/components/ventas/POSServiceShortcuts";
 import { CartSummary } from "@/components/ventas/CartSummary";
 import { POSCheckoutSuccessModal } from "@/components/ventas/POSCheckoutSuccessModal";
 
 export default function VentasPage() {
-  const [products, setProducts] = useState<Product[]>([]);
+  const [physicalProducts, setPhysicalProducts] = useState<Product[]>([]);
+  const [workshopServices, setWorkshopServices] = useState<Product[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [cart, setCart] = useState<CartItem[]>([]);
   const [paymentMethod, setPaymentMethod] = useState<"Efectivo" | "Transferencia" | "Tarjeta">("Efectivo");
@@ -30,18 +31,28 @@ export default function VentasPage() {
     }, 0);
   };
 
-  const loadProducts = async () => {
+  const loadPOSData = async () => {
     setIsLoading(true);
-    const data = await getProducts();
-    setProducts(data);
-    setIsLoading(false);
+    try {
+      const [prodsData, srvsData] = await Promise.all([
+        getProducts({ is_service: false }),
+        getProducts({ is_service: true }),
+      ]);
+      setPhysicalProducts(prodsData);
+      setWorkshopServices(srvsData);
+    } catch (error) {
+      console.error("Error al cargar datos en el POS:", error);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   useEffect(() => {
-    loadProducts();
+    loadPOSData();
     if (searchInputRef.current) searchInputRef.current.focus();
   }, []);
 
+  // Agregar Repuesto Físico al carrito (validando stock real)
   const addProductToCart = (product: Product): boolean => {
     const targetVariantId = product.variant_id || product.id;
     const existingItem = cart.find((item) => item.variant_id === targetVariantId);
@@ -73,38 +84,47 @@ export default function VentasPage() {
           price: product.price,
           quantity: 1,
           stock: product.stock,
-          is_service: product.is_service || false,
+          is_service: false,
         },
       ];
+    });
+
+    safeToast({
+      title: "Repuesto Agregado",
+      description: `${product.name} agregado al ticket.`,
+      type: "success",
     });
     return true;
   };
 
-  const addServiceItem = (name: string, price: number, serviceCode: string) => {
-    const serviceVariantId = `srv-${serviceCode.toLowerCase()}`;
+  // Agregar Servicio de Taller Dinámico (desde BD) al carrito
+  const addServiceProductToCart = (serviceProduct: Product) => {
+    const targetVariantId = serviceProduct.id;
     setCart((prev) => {
-      const existing = prev.find((item) => item.variant_id === serviceVariantId);
+      const existing = prev.find((item) => item.variant_id === targetVariantId);
       if (existing) {
         return prev.map((item) =>
-          item.variant_id === serviceVariantId ? { ...item, quantity: item.quantity + 1 } : item
+          item.variant_id === targetVariantId ? { ...item, quantity: item.quantity + 1 } : item
         );
       }
       return [
         ...prev,
         {
-          variant_id: serviceVariantId,
-          sku: serviceCode,
-          name: name,
-          price: price,
+          variant_id: targetVariantId,
+          product_id: serviceProduct.id,
+          sku: serviceProduct.sku,
+          name: serviceProduct.name,
+          price: serviceProduct.price,
           quantity: 1,
-          stock: 999999,
+          stock: 999999, // Stock virtual ilimitado
           is_service: true,
         },
       ];
     });
+
     safeToast({
       title: "Servicio Agregado",
-      description: `${name} agregado al ticket.`,
+      description: `${serviceProduct.name} agregado al ticket.`,
       type: "success",
     });
   };
@@ -172,7 +192,7 @@ export default function VentasPage() {
       });
       setIsSuccessModalOpen(true);
       setCart([]);
-      loadProducts();
+      loadPOSData();
     } catch (error) {
       const message = error instanceof Error ? error.message : "Fallo inesperado al comunicarse con el servidor.";
       safeToast({
@@ -185,53 +205,58 @@ export default function VentasPage() {
     }
   };
 
-  const filteredProducts = useMemo(() => {
+  // Filtrado exclusivo para Repuestos Físicos en el buscador
+  const filteredPhysicalProducts = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    if (!q) return products;
-    return products.filter(
+    if (!q) return physicalProducts;
+    return physicalProducts.filter(
       (p) =>
         p.name.toLowerCase().includes(q) ||
         p.sku.toLowerCase().includes(q) ||
-        p.brand.toLowerCase().includes(q)
+        p.brand.toLowerCase().includes(q) ||
+        (p.part_number_factory && p.part_number_factory.toLowerCase().includes(q))
     );
-  }, [products, searchQuery]);
+  }, [physicalProducts, searchQuery]);
 
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-1">
-        <h1 className="text-3xl font-bold tracking-tight">Terminal de Ventas (Caja)</h1>
+        <h1 className="text-3xl font-bold tracking-tight">Terminal de Ventas (POS)</h1>
         <p className="text-muted-foreground text-sm">
-          Facturación rápida en mesón, control de servicios y rebaja de stock en tiempo real.
+          Facturación en mesón, cobro de servicios y rebaja de stock físico en tiempo real.
         </p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         <div className="lg:col-span-7 flex flex-col gap-4">
-          <POSServiceShortcuts onAddService={addServiceItem} />
+          {/* Accesos Rápidos a Servicios Dinámicos desde BD */}
+          <POSServiceShortcuts
+            services={workshopServices}
+            isLoading={isLoading}
+            onAddService={addServiceProductToCart}
+          />
 
+          {/* Barra de Búsqueda (Sin la insignia 'Escáner Activo') */}
           <div className="relative">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               ref={searchInputRef}
               type="search"
-              placeholder="Buscar por SKU, nombre o marca..."
+              placeholder="Buscar repuestos por SKU, nombre, marca o N° OEM..."
               className="pl-9 h-11 bg-background border-border text-sm"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
-            <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1 text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded border border-border">
-              <Barcode className="h-3 w-3 text-primary" />
-              <span>Escáner Activo</span>
-            </div>
           </div>
 
+          {/* Tabla de Repuestos Físicos Exclusiva */}
           <div className="rounded-xl border border-border bg-background/50 overflow-hidden">
             <Table>
               <TableHeader className="bg-muted/50">
                 <TableRow className="border-border">
                   <TableHead>Repuesto / Marca</TableHead>
                   <TableHead className="text-right">Precio</TableHead>
-                  <TableHead className="text-right">Stock</TableHead>
+                  <TableHead className="text-right">Stock Real</TableHead>
                   <TableHead className="text-center">Acción</TableHead>
                 </TableRow>
               </TableHeader>
@@ -242,50 +267,59 @@ export default function VentasPage() {
                       <Loader2 className="h-5 w-5 animate-spin mx-auto text-primary" />
                     </TableCell>
                   </TableRow>
-                ) : filteredProducts.map((product) => {
-                  const isOutOfStock = product.stock <= 0 && !product.is_service;
-                  return (
-                    <TableRow key={product.id} className="border-border hover:bg-muted/30">
-                      <TableCell>
-                        <div className="font-medium text-foreground">{product.name}</div>
-                        <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                          <span className="font-mono text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
-                            {product.sku}
+                ) : filteredPhysicalProducts.length === 0 ? (
+                  <TableRow className="border-border">
+                    <TableCell colSpan={4} className="h-32 text-center text-muted-foreground">
+                      No se encontraron repuestos físicos en el catálogo.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  filteredPhysicalProducts.map((product) => {
+                    const isOutOfStock = product.stock <= 0;
+                    return (
+                      <TableRow key={product.id} className="border-border hover:bg-muted/30">
+                        <TableCell>
+                          <div className="font-medium text-foreground">{product.name}</div>
+                          <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                            <span className="font-mono text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+                              {product.sku}
+                            </span>
+                            <span className="text-xs text-muted-foreground flex items-center gap-1">
+                              <Tag className="h-3 w-3" /> {product.brand}
+                            </span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right font-semibold">
+                          ${product.price.toLocaleString("es-CL")}
+                        </TableCell>
+                        <TableCell className="text-right font-bold text-muted-foreground">
+                          <span
+                            className={
+                              isOutOfStock
+                                ? "text-muted-foreground/50 line-through"
+                                : product.stock <= product.min_stock
+                                ? "text-red-500"
+                                : ""
+                            }
+                          >
+                            {product.stock} un.
                           </span>
-                          <span className="text-xs text-muted-foreground flex items-center gap-1">
-                            <Tag className="h-3 w-3" /> {product.brand}
-                          </span>
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-right font-semibold">
-                        ${product.price.toLocaleString("es-CL")}
-                      </TableCell>
-                      <TableCell className="text-right font-bold text-muted-foreground">
-                        <span
-                          className={
-                            isOutOfStock
-                              ? "text-muted-foreground/50 line-through"
-                              : product.stock <= product.min_stock
-                              ? "text-red-500"
-                              : ""
-                          }
-                        >
-                          {product.stock} un.
-                        </span>
-                      </TableCell>
-                      <TableCell className="text-center">
-                        <Button size="sm" disabled={isOutOfStock} onClick={() => addProductToCart(product)}>
-                          {isOutOfStock ? "Agotado" : "Agregar"}
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <Button size="sm" disabled={isOutOfStock} onClick={() => addProductToCart(product)}>
+                            {isOutOfStock ? "Agotado" : "Agregar"}
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
+                )}
               </TableBody>
             </Table>
           </div>
         </div>
 
+        {/* Resumen del Ticket de Venta (CartSummary) */}
         <div className="lg:col-span-5">
           <CartSummary
             cart={cart}

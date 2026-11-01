@@ -1,4 +1,5 @@
-import { ShieldCheck, Bell } from "lucide-react";
+// components/layout/topbar.tsx
+import { Bell } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { logout } from "@/app/(dashboard)/actions";
 import { createClient } from "@/lib/supabase/server";
@@ -11,12 +12,9 @@ export async function Topbar() {
 
   return (
     <header className="h-16 border-b border-border bg-background/50 backdrop-blur-sm px-6 flex items-center justify-between sticky top-0 z-30">
-      {/* Indicador de Sucursal y Estado */}
+      {/* Espacio estructural izquierdo */}
       <div className="flex items-center gap-3">
-        <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
-          <ShieldCheck className="h-3.5 w-3.5" />
-          Sistema Seguro (Local Principal)
-        </span>
+        {/* Eliminado: Indicador estético 'Sistema Seguro (Local Principal)' */}
       </div>
 
       {/* Perfil y Accesos de Usuario */}
