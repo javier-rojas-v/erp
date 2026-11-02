@@ -23,7 +23,7 @@ export function UpdateProductModal({ product, isOpen, onClose, onSuccess }: Upda
   const [brand, setBrand] = useState("");
   const [category, setCategory] = useState("");
   const [price, setPrice] = useState("");
-  const [costPrice, setCostPrice] = useState(""); // Campo para ajustar costo
+  const [costPrice, setCostPrice] = useState("");
   const [minStock, setMinStock] = useState("2");
   const [availableCategories, setAvailableCategories] = useState<string[]>([]);
   const [isUpdating, setIsUpdating] = useState(false);
@@ -37,8 +37,8 @@ export function UpdateProductModal({ product, isOpen, onClose, onSuccess }: Upda
       setPrice(product.price !== undefined ? product.price.toString() : "0");
       setCostPrice(product.cost_price !== undefined ? product.cost_price.toString() : "0");
       setMinStock(product.min_stock !== undefined ? product.min_stock.toString() : "2");
-
       const isSrv = Boolean(product.is_service);
+
       setIsLoadingCategories(true);
       getCategories(isSrv)
         .then((cats) => {
@@ -59,15 +59,16 @@ export function UpdateProductModal({ product, isOpen, onClose, onSuccess }: Upda
       toast({ title: "Campo requerido", description: "El nombre no puede estar vacío.", type: "warning" });
       return;
     }
+
     const priceNum = parseFloat(price);
-    if (isNaN(priceNum) || priceNum < 0) {
-      toast({ title: "Precio inválido", description: "Ingresa un valor numérico mayor o igual a 0.", type: "warning" });
+    if (isNaN(priceNum) || priceNum <= 0) {
+      toast({ title: "Precio inválido", description: "Ingresa un precio de venta mayor a 0.", type: "warning" });
       return;
     }
 
     const costPriceNum = parseFloat(costPrice);
-    if (!isService && (isNaN(costPriceNum) || costPriceNum < 0)) {
-      toast({ title: "Costo inválido", description: "Ingresa un costo de compra válido.", type: "warning" });
+    if (!isService && (isNaN(costPriceNum) || costPriceNum <= 0)) {
+      toast({ title: "Costo inválido", description: "El costo de compra debe ser estrictamente mayor a 0 para repuestos físicos.", type: "warning" });
       return;
     }
 

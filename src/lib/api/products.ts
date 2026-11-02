@@ -26,9 +26,13 @@ export async function createProduct(input: CreateProductInput): Promise<Mutation
     const formattedName = input.name.trim();
     const formattedBrand = input.brand.trim();
     const formattedPrice = Math.max(0, Number(input.price) || 0);
-    const formattedCostPrice = isService ? 0 : Math.max(0, Number(input.cost_price) || 0);
+    const formattedCostPrice = isService ? 0 : Number(input.cost_price) || 0;
     const formattedStock = isService ? 0 : Math.max(0, Number(input.stock) || 0);
     const formattedMinStock = isService ? 0 : Math.max(0, Number(input.min_stock) || 0);
+
+    if (!isService && formattedCostPrice <= 0) {
+      return { success: false, error: "El costo de compra debe ser mayor a 0 para repuestos físicos." };
+    }
 
     const { data: productData, error: productError } = await supabase
       .from("products")
@@ -60,6 +64,7 @@ export async function createProduct(input: CreateProductInput): Promise<Mutation
           product_id: productData.id,
           type: "ADJUSTMENT_IN",
           quantity: formattedStock,
+          unit_cost: formattedCostPrice,
           reference_document: "INVENTARIO_INICIAL",
           cashier_email: user.email,
         },
@@ -80,13 +85,26 @@ export async function updateProduct(
   try {
     await requireAuthenticatedUser();
     const supabase = createClient();
+
+    const { data: currentProduct } = await supabase
+      .from("products")
+      .select("is_service, cost_price")
+      .eq("id", id)
+      .single();
+
+    const willBeService = input.is_service !== undefined ? Boolean(input.is_service) : Boolean(currentProduct?.is_service);
+    
+    if (input.cost_price !== undefined && !willBeService && Number(input.cost_price) <= 0) {
+      return { success: false, error: "El costo de compra debe ser mayor a 0 para repuestos físicos." };
+    }
+
     const updatePayload: Record<string, unknown> = {};
 
     if (input.name !== undefined) updatePayload.name = input.name.trim();
     if (input.brand !== undefined) updatePayload.brand = input.brand.trim();
     if (input.category !== undefined) updatePayload.category = input.category;
     if (input.price !== undefined) updatePayload.price = Math.max(0, Number(input.price) || 0);
-    if (input.cost_price !== undefined) updatePayload.cost_price = Math.max(0, Number(input.cost_price) || 0);
+    if (input.cost_price !== undefined) updatePayload.cost_price = willBeService ? 0 : Number(input.cost_price);
     if (input.stock !== undefined) updatePayload.stock = Math.max(0, Number(input.stock) || 0);
     if (input.min_stock !== undefined) updatePayload.min_stock = Math.max(0, Number(input.min_stock) || 0);
     if (input.part_number_factory !== undefined) updatePayload.part_number_factory = input.part_number_factory?.trim() || null;
@@ -163,11 +181,6 @@ export async function getCategories(isService: boolean = false): Promise<string[
   }
 }
 
-/**
- * Carga masiva e inserción/actualización (upsert por sku) de productos y servicios.
- * Sanitiza campos financieros, control de inventario y datos opcionales, garantizando
- * la trazabilidad inicial en inventory_transactions con tipo ADJUSTMENT_IN.
- */
 export async function bulkCreateProducts(productsList: CreateProductInput[]): Promise<MutationResult<number>> {
   try {
     const user = await requireAuthenticatedUser();
@@ -176,10 +189,7 @@ export async function bulkCreateProducts(productsList: CreateProductInput[]): Pr
     const formattedProducts = productsList.map((p) => {
       const isSrv = Boolean(p.is_service);
 
-      // 1. Sanitización de SKU (mayúsculas sin espacios)
       const sku = String(p.sku || "").trim().toUpperCase();
-
-      // 2. Sanitización de textos descriptivos
       const name = String(p.name || "").trim();
       const brand = String(p.brand || "").trim();
       
@@ -188,11 +198,13 @@ export async function bulkCreateProducts(productsList: CreateProductInput[]): Pr
         category = isSrv ? "Mano de Obra" : "General";
       }
 
-      // 3. Sanitización de precios y costos (COGS)
       const price = Math.max(0, Number(p.price) || 0);
-      const cost_price = isSrv ? 0 : Math.max(0, Number(p.cost_price) || 0);
+      const cost_price = isSrv ? 0 : Number(p.cost_price) || 0;
 
-      // 4. Control de Inventario (Servicios en 0, repuestos físicos enteros >= 0)
+      if (!isSrv && cost_price <= 0) {
+        throw new Error(`El repuesto físico [SKU: ${sku}] debe tener un costo de compra mayor a 0.`);
+      }
+
       const stock = isSrv ? 0 : Math.max(0, Math.floor(Number(p.stock) || 0));
       const parsedMinStock = Number(p.min_stock);
       const min_stock = isSrv
@@ -201,7 +213,6 @@ export async function bulkCreateProducts(productsList: CreateProductInput[]): Pr
         ? 2
         : Math.floor(parsedMinStock);
 
-      // 5. Identificadores Opcionales (Cero espacios o null)
       const part_number_factory =
         p.part_number_factory && String(p.part_number_factory).trim() !== ""
           ? String(p.part_number_factory).trim()
@@ -227,7 +238,6 @@ export async function bulkCreateProducts(productsList: CreateProductInput[]): Pr
       };
     });
 
-    // Operación masiva Upsert basada en la restricción del SKU
     const { data: insertedProducts, error } = await supabase
       .from("products")
       .upsert(formattedProducts, { onConflict: "sku" })
@@ -239,7 +249,6 @@ export async function bulkCreateProducts(productsList: CreateProductInput[]): Pr
 
     const count = insertedProducts?.length || 0;
 
-    // Trazabilidad automatizada en Kardex para repuestos físicos con stock inicial
     if (insertedProducts && insertedProducts.length > 0) {
       const initialTransactions = insertedProducts
         .filter((p) => !p.is_service && p.stock > 0)
@@ -247,6 +256,7 @@ export async function bulkCreateProducts(productsList: CreateProductInput[]): Pr
           product_id: p.id,
           type: "ADJUSTMENT_IN",
           quantity: p.stock,
+          unit_cost: p.cost_price,
           reference_document: "CARGA_MASIVA",
           cashier_email: user.email,
         }));

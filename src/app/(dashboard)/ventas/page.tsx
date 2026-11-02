@@ -66,9 +66,20 @@ export default function VentasPage() {
       });
       return false;
     }
+
+    if (!product.is_service && (product.cost_price === undefined || product.cost_price <= 0)) {
+      safeToast({
+        title: "Costo no asignado",
+        description: `El repuesto "${product.name}" tiene costo $0. Edita su ficha en Inventario e ingresa su costo de compra antes de vender.`,
+        type: "warning",
+      });
+      return false;
+    }
+
     const targetVariantId = product.variant_id || product.id;
     const existingItem = cart.find((item) => item.variant_id === targetVariantId);
     const currentQtyInCart = existingItem ? existingItem.quantity : 0;
+
     if (!product.is_service && currentQtyInCart >= product.stock) {
       safeToast({
         title: "Límite de stock",
@@ -77,6 +88,7 @@ export default function VentasPage() {
       });
       return false;
     }
+
     setCart((prev) => {
       const index = prev.findIndex((item) => item.variant_id === targetVariantId);
       if (index > -1) {
@@ -92,12 +104,14 @@ export default function VentasPage() {
           sku: product.sku,
           name: product.name,
           price: product.price,
+          cost_price: product.cost_price || 0,
           quantity: 1,
           stock: product.stock,
           is_service: false,
         },
       ];
     });
+
     safeToast({
       title: "Repuesto Agregado",
       description: `${product.name} agregado al ticket.`,
@@ -115,6 +129,7 @@ export default function VentasPage() {
       });
       return;
     }
+
     const targetVariantId = serviceProduct.id;
     setCart((prev) => {
       const existing = prev.find((item) => item.variant_id === targetVariantId);
@@ -131,12 +146,14 @@ export default function VentasPage() {
           sku: serviceProduct.sku,
           name: serviceProduct.name,
           price: serviceProduct.price,
+          cost_price: 0,
           quantity: 1,
           stock: 999999,
           is_service: true,
         },
       ];
     });
+
     safeToast({
       title: "Servicio Agregado",
       description: `${serviceProduct.name} agregado al ticket.`,
@@ -148,6 +165,7 @@ export default function VentasPage() {
     if (!activeSession) return;
     const targetItem = cart.find((item) => item.variant_id === variant_id);
     if (!targetItem) return;
+
     if (delta > 0 && !targetItem.is_service && targetItem.quantity + delta > targetItem.stock) {
       safeToast({
         title: "Stock máximo",
@@ -156,6 +174,7 @@ export default function VentasPage() {
       });
       return;
     }
+
     setCart((prev) =>
       prev
         .map((item) => {
@@ -182,8 +201,22 @@ export default function VentasPage() {
       });
       return;
     }
+
     if (cart.length === 0) return;
+
+    for (const item of cart) {
+      if (!item.is_service && (item.cost_price === undefined || item.cost_price <= 0)) {
+        safeToast({
+          title: "Costo no asignado",
+          description: `El repuesto "${item.name}" no tiene costo asignado. Asigne su costo en Inventario antes de realizar la venta.`,
+          type: "warning",
+        });
+        return;
+      }
+    }
+
     setIsProcessing(true);
+
     try {
       const refDoc = `POS-${Date.now().toString().slice(-6)}`;
       const checkoutItems = cart.map((i) => ({
@@ -191,11 +224,14 @@ export default function VentasPage() {
         name: i.name,
         sku: i.sku,
         price: i.price,
+        cost_price: i.cost_price || 0,
         quantity: i.quantity,
         is_service: i.is_service,
       }));
+
       const totalAmount = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
       const res = await processPOSSale(checkoutItems, refDoc, paymentMethod, totalAmount);
+
       if (!res.success) {
         safeToast({
           title: "Error al registrar la venta",
@@ -204,11 +240,13 @@ export default function VentasPage() {
         });
         return;
       }
+
       safeToast({
         title: "Venta Exitosa",
         description: `Transacción procesada correctamente.`,
         type: "success",
       });
+
       setIsSuccessModalOpen(true);
       setCart([]);
       loadPOSData();
@@ -280,7 +318,6 @@ export default function VentasPage() {
             isLoading={isLoading}
             onAddService={addServiceProductToCart}
           />
-
           <div className="relative">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -319,6 +356,7 @@ export default function VentasPage() {
                 ) : (
                   filteredPhysicalProducts.map((product) => {
                     const isOutOfStock = product.stock <= 0;
+                    const hasInvalidCost = product.cost_price === undefined || product.cost_price <= 0;
                     return (
                       <TableRow key={product.id} className="border-border hover:bg-muted/30">
                         <TableCell>
@@ -330,6 +368,11 @@ export default function VentasPage() {
                             <span className="text-xs text-muted-foreground flex items-center gap-1">
                               <Tag className="h-3 w-3" /> {product.brand}
                             </span>
+                            {hasInvalidCost && (
+                              <span className="text-[10px] font-bold text-amber-500 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
+                                Sin Costo Asignado
+                              </span>
+                            )}
                           </div>
                         </TableCell>
                         <TableCell className="text-right font-semibold">
@@ -351,10 +394,10 @@ export default function VentasPage() {
                         <TableCell className="text-center">
                           <Button
                             size="sm"
-                            disabled={isOutOfStock || !activeSession}
+                            disabled={isOutOfStock || !activeSession || hasInvalidCost}
                             onClick={() => addProductToCart(product)}
                           >
-                            {isOutOfStock ? "Agotado" : "Agregar"}
+                            {isOutOfStock ? "Agotado" : hasInvalidCost ? "Sin Costo" : "Agregar"}
                           </Button>
                         </TableCell>
                       </TableRow>

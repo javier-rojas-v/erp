@@ -1,5 +1,4 @@
 // src/types/index.ts
-
 export type ProductCategory =
   | 'Lubricantes y Aceites'
   | 'Filtros'
@@ -53,7 +52,7 @@ export interface Product {
   category: ProductCategory | ServiceCategory | string;
   brand: string;
   price: number;
-  cost_price: number; // Nuevo campo para cálculo de COGS
+  cost_price: number; // Campo para cálculo de COGS
   stock: number;
   min_stock: number;
   is_service?: boolean;
@@ -66,6 +65,7 @@ export interface CartItem {
   sku: string;
   name: string;
   price: number;
+  cost_price: number; // Snapshot del costo unitario congelado
   quantity: number;
   stock: number;
   is_service: boolean;

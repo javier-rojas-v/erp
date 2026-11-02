@@ -30,7 +30,6 @@ export default function FinanzasPage() {
   const [timePreset, setTimePreset] = useState<TimePreset>("month");
   const [customStartDate, setCustomStartDate] = useState<string>("");
   const [customEndDate, setCustomEndDate] = useState<string>("");
-
   const [financialSummary, setFinancialSummary] = useState<FinancialSummary>({
     totalIncome: 0,
     cogs: 0,
@@ -40,7 +39,6 @@ export default function FinanzasPage() {
     netProfit: 0,
     netMarginPct: 0,
   });
-
   const [dailyTrends, setDailyTrends] = useState<DailyTrendPoint[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -48,23 +46,36 @@ export default function FinanzasPage() {
   const [expenseCategoryFilter, setExpenseCategoryFilter] = useState("ALL");
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
 
+  // Estandarización de límites de fecha en zona horaria America/Santiago
   const { startDate, endDate } = useMemo(() => {
     const now = new Date();
-    let start = new Date();
-    let end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+    const formatter = new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/Santiago",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    });
+    const parts = formatter.formatToParts(now);
+    const year = parseInt(parts.find((p) => p.type === "year")!.value, 10);
+    const month = parseInt(parts.find((p) => p.type === "month")!.value, 10) - 1;
+    const day = parseInt(parts.find((p) => p.type === "day")!.value, 10);
+
+    let start = new Date(Date.UTC(year, month, day, 0, 0, 0, 0));
+    let end = new Date(Date.UTC(year, month, day, 23, 59, 59, 999));
 
     if (timePreset === "today") {
-      start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+      start = new Date(Date.UTC(year, month, day, 0, 0, 0, 0));
     } else if (timePreset === "week") {
-      const day = now.getDay();
-      const diff = now.getDate() - day + (day === 0 ? -6 : 1);
-      start = new Date(now.setDate(diff));
-      start.setHours(0, 0, 0, 0);
+      const dayOfWeek = now.getDay();
+      const diff = day - dayOfWeek + (dayOfWeek === 0 ? -6 : 1);
+      start = new Date(Date.UTC(year, month, diff, 0, 0, 0, 0));
     } else if (timePreset === "month") {
-      start = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+      start = new Date(Date.UTC(year, month, 1, 0, 0, 0, 0));
     } else if (timePreset === "custom" && customStartDate && customEndDate) {
-      start = new Date(`${customStartDate}T00:00:00`);
-      end = new Date(`${customEndDate}T23:59:59`);
+      const [sY, sM, sD] = customStartDate.split("-").map(Number);
+      const [eY, eM, eD] = customEndDate.split("-").map(Number);
+      start = new Date(Date.UTC(sY, sM - 1, sD, 0, 0, 0, 0));
+      end = new Date(Date.UTC(eY, eM - 1, eD, 23, 59, 59, 999));
     }
 
     return { startDate: start, endDate: end };
@@ -98,10 +109,8 @@ export default function FinanzasPage() {
         exp.category.toLowerCase().includes(q) ||
         (exp.description && exp.description.toLowerCase().includes(q)) ||
         exp.cashier_email.toLowerCase().includes(q);
-
       const matchCategory =
         expenseCategoryFilter === "ALL" ? true : exp.category === expenseCategoryFilter;
-
       return matchSearch && matchCategory;
     });
   }, [expenses, expenseSearch, expenseCategoryFilter]);
@@ -130,7 +139,6 @@ export default function FinanzasPage() {
             Control de márgenes, estado de pérdidas y ganancias (P&L) e inteligencia de negocios.
           </p>
         </div>
-
         <div className="flex flex-wrap items-center gap-2 bg-card border border-border p-1.5 rounded-xl shadow-xs">
           {(
             [
@@ -152,7 +160,6 @@ export default function FinanzasPage() {
               {preset.label}
             </button>
           ))}
-
           {timePreset === "custom" && (
             <div className="flex items-center gap-2 ml-2 pl-2 border-l border-border">
               <Input
@@ -282,17 +289,20 @@ export default function FinanzasPage() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <BarChart3 className="h-5 w-5 text-primary" />
-            <h2 className="text-lg font-semibold tracking-tight">Comportamiento Financiero Diario</h2>
+            <h2 className="text-lg font-semibold tracking-tight">Comportamiento Financiero Diario (Hora Chile)</h2>
           </div>
           <div className="flex items-center gap-4 text-xs font-semibold">
             <span className="flex items-center gap-1.5 text-emerald-400">
               <span className="h-2.5 w-2.5 rounded-full bg-emerald-500 inline-block" /> Ingresos ($I$)
             </span>
+            <span className="flex items-center gap-1.5 text-blue-400">
+              <span className="h-2.5 w-2.5 rounded-full bg-blue-500 inline-block" /> COGS ($C$)
+            </span>
             <span className="flex items-center gap-1.5 text-red-400">
               <span className="h-2.5 w-2.5 rounded-full bg-red-500 inline-block" /> Gastos ($G$)
             </span>
-            <span className="flex items-center gap-1.5 text-blue-400">
-              <span className="h-2.5 w-2.5 rounded-full bg-blue-500 inline-block" /> Utilidad Neta ($GN$)
+            <span className="flex items-center gap-1.5 text-emerald-400">
+              <span className="h-2.5 w-2.5 rounded-full bg-emerald-500 inline-block" /> Utilidad Neta ($GN$)
             </span>
           </div>
         </div>
@@ -309,19 +319,20 @@ export default function FinanzasPage() {
         ) : (
           <div className="space-y-3 pt-2">
             {dailyTrends.map((pt) => {
-              const maxVal = Math.max(pt.income, pt.expenses, 1);
+              const maxVal = Math.max(pt.income, pt.cogs, pt.expenses, 1);
               const incomeWidth = Math.min(100, Math.round((pt.income / maxVal) * 100));
+              const cogsWidth = Math.min(100, Math.round((pt.cogs / maxVal) * 100));
               const expenseWidth = Math.min(100, Math.round((pt.expenses / maxVal) * 100));
-
               return (
                 <div key={pt.date} className="flex flex-col gap-1 p-2.5 rounded-lg bg-muted/30 border border-border/50">
                   <div className="flex items-center justify-between text-xs font-semibold">
                     <span className="font-mono text-muted-foreground">{pt.date}</span>
-                    <div className="flex items-center gap-3 font-mono">
-                      <span className="text-emerald-400">+${pt.income.toLocaleString("es-CL")}</span>
-                      <span className="text-red-400">-${pt.expenses.toLocaleString("es-CL")}</span>
+                    <div className="flex items-center gap-3 font-mono text-xs">
+                      <span className="text-emerald-400">Ing: +${pt.income.toLocaleString("es-CL")}</span>
+                      <span className="text-blue-400">COGS: -${pt.cogs.toLocaleString("es-CL")}</span>
+                      <span className="text-red-400">Gastos: -${pt.expenses.toLocaleString("es-CL")}</span>
                       <span className={pt.netProfit >= 0 ? "text-emerald-400 font-extrabold" : "text-red-400 font-extrabold"}>
-                        = ${pt.netProfit.toLocaleString("es-CL")}
+                        = Net: ${pt.netProfit.toLocaleString("es-CL")}
                       </span>
                     </div>
                   </div>
@@ -329,6 +340,11 @@ export default function FinanzasPage() {
                     <div className="h-2 w-full bg-muted rounded-full overflow-hidden flex">
                       <div className="h-full bg-emerald-500 transition-all duration-300" style={{ width: `${incomeWidth}%` }} />
                     </div>
+                    {pt.cogs > 0 && (
+                      <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden flex">
+                        <div className="h-full bg-blue-500 transition-all duration-300" style={{ width: `${cogsWidth}%` }} />
+                      </div>
+                    )}
                     {pt.expenses > 0 && (
                       <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden flex">
                         <div className="h-full bg-red-500 transition-all duration-300" style={{ width: `${expenseWidth}%` }} />
@@ -386,7 +402,7 @@ export default function FinanzasPage() {
           <Table>
             <TableHeader className="bg-muted/50">
               <TableRow className="border-border">
-                <TableHead>Fecha / Hora</TableHead>
+                <TableHead>Fecha / Hora (CL)</TableHead>
                 <TableHead>Categoría de Gasto</TableHead>
                 <TableHead>Descripción / Concepto</TableHead>
                 <TableHead>Registrado Por</TableHead>

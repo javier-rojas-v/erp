@@ -21,6 +21,7 @@ export function ProductCreateModal({ isOpen, onClose, onSuccess }: ProductCreate
   const [isSavingProduct, setIsSavingProduct] = useState(false);
   const [categories, setCategories] = useState<string[]>([]);
   const [isLoadingCategories, setIsLoadingCategories] = useState(false);
+
   const [formName, setFormName] = useState("");
   const [formBrand, setFormBrand] = useState("Genérico");
   const [formCategory, setFormCategory] = useState("Lubricantes y Aceites");
@@ -28,7 +29,7 @@ export function ProductCreateModal({ isOpen, onClose, onSuccess }: ProductCreate
   const [formOem, setFormOem] = useState("");
   const [formBarcode, setFormBarcode] = useState("");
   const [formPrice, setFormPrice] = useState("");
-  const [formCostPrice, setFormCostPrice] = useState(""); // Campo de costo inicial
+  const [formCostPrice, setFormCostPrice] = useState("");
   const [formStock, setFormStock] = useState("");
   const [formMinStock, setFormMinStock] = useState("2");
 
@@ -73,6 +74,7 @@ export function ProductCreateModal({ isOpen, onClose, onSuccess }: ProductCreate
       });
       return;
     }
+
     const priceNum = parseFloat(formPrice);
     if (isNaN(priceNum) || priceNum <= 0) {
       toast({
@@ -84,10 +86,10 @@ export function ProductCreateModal({ isOpen, onClose, onSuccess }: ProductCreate
     }
 
     const costPriceNum = parseFloat(formCostPrice);
-    if (!isService && (isNaN(costPriceNum) || costPriceNum < 0)) {
+    if (!isService && (isNaN(costPriceNum) || costPriceNum <= 0)) {
       toast({
         title: "Costo inválido",
-        description: "Ingresa un costo de compra válido mayor o igual a 0.",
+        description: "El costo de compra debe ser estrictamente mayor a 0 para repuestos físicos.",
         type: "warning",
       });
       return;
@@ -102,7 +104,7 @@ export function ProductCreateModal({ isOpen, onClose, onSuccess }: ProductCreate
       part_number_factory: isService ? "" : formOem,
       barcode: isService ? "" : formBarcode,
       price: priceNum,
-      cost_price: isService ? 0 : costPriceNum || 0,
+      cost_price: isService ? 0 : costPriceNum,
       stock: isService ? 0 : parseInt(formStock || "0", 10),
       min_stock: isService ? 0 : parseInt(formMinStock || "2", 10),
       is_service: isService,
@@ -136,7 +138,6 @@ export function ProductCreateModal({ isOpen, onClose, onSuccess }: ProductCreate
             <h3 className="text-lg font-bold">
               {isService ? "Crear Ficha de Servicio de Taller" : "Crear Ficha de Repuesto Físico"}
             </h3>
-
             <div className="inline-flex rounded-lg border border-border bg-background p-1 gap-1">
               <button
                 type="button"
@@ -275,7 +276,6 @@ export function ProductCreateModal({ isOpen, onClose, onSuccess }: ProductCreate
                   />
                 </div>
               )}
-
               {!isService && (
                 <>
                   <div>

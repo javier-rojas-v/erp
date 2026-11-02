@@ -120,7 +120,7 @@ export default function DashboardPage() {
           </div>
           <div className="mt-4">
             <div className="text-2xl font-bold tabular-nums">
-              {isLoading ? "..." : `${lowStockProducts.length} Repuestos`}
+              {isLoading ? "..." : `${lowStockProducts.length} Productos`}
             </div>
             <p className="text-xs text-muted-foreground mt-1">
               {lowStockProducts.length > 0 ? "Requieren reposición urgente" : "Stock físico en niveles óptimos"}

@@ -39,10 +39,10 @@ export async function getFinancialSummary(startDate: Date, endDate: Date): Promi
     const startIso = startDate.toISOString();
     const endIso = endDate.toISOString();
 
-    // 1. Obtener transacciones de ventas con costo de compra del producto
+    // 1. Consulta de ventas uniendo unit_cost congelado y fallback del catálogo maestro
     const { data: txsData, error: txsError } = await supabase
       .from("inventory_transactions")
-      .select("id, quantity, created_at, products(price, cost_price)")
+      .select("id, quantity, unit_cost, created_at, products(price, cost_price, is_service)")
       .eq("type", "SALE_OUT")
       .gte("created_at", startIso)
       .lte("created_at", endIso);
@@ -51,7 +51,7 @@ export async function getFinancialSummary(startDate: Date, endDate: Date): Promi
       console.error("Error al consultar transacciones de ventas en BI:", txsError.message);
     }
 
-    // 2. Obtener egresos operativos en el rango seleccionado
+    // 2. Consulta de egresos operativos
     const { data: expData, error: expError } = await supabase
       .from("expenses")
       .select("amount, date")
@@ -66,16 +66,28 @@ export async function getFinancialSummary(startDate: Date, endDate: Date): Promi
     let totalCogs = 0;
     const dailyMap: Record<string, { income: number; cogs: number; expenses: number }> = {};
 
+    // Estandarización determinista de fecha bajo la zona horaria oficial America/Santiago
     const getDayKey = (dateStr: string) => {
       const d = new Date(dateStr);
-      return d.toLocaleDateString("es-CL", { timeZone: "America/Santiago", year: "numeric", month: "2-digit", day: "2-digit" });
+      return d.toLocaleDateString("es-CL", {
+        timeZone: "America/Santiago",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      });
     };
 
     if (txsData) {
       txsData.forEach((tx: any) => {
         const qty = Number(tx.quantity) || 0;
         const price = Number(tx.products?.price) || 0;
-        const costPrice = Number(tx.products?.cost_price) || 0;
+        const isService = Boolean(tx.products?.is_service);
+        
+        // Inmutabilidad del COGS: Preferir unit_cost snapshot de la transacción.
+        // Si no existe (ventas históricas previas a la migración), usar products.cost_price como fallback.
+        const snapshotCost = Number(tx.unit_cost);
+        const fallbackCost = Number(tx.products?.cost_price) || 0;
+        const costPrice = isService ? 0 : (snapshotCost > 0 ? snapshotCost : fallbackCost);
 
         const income = qty * price;
         const cogs = qty * costPrice;

@@ -7,7 +7,7 @@ export interface StockEntryInput {
   quantity: number;
   referenceDocument: string;
   newSalePrice?: number;
-  newCostPrice?: number; // Parámetro obligatorio para COGS
+  newCostPrice?: number;
 }
 
 export interface POSCheckoutItem {
@@ -15,6 +15,7 @@ export interface POSCheckoutItem {
   name: string;
   sku: string;
   price: number;
+  cost_price?: number;
   quantity: number;
   is_service: boolean;
 }
@@ -33,6 +34,11 @@ export async function registerStockEntry(input: StockEntryInput): Promise<{ succ
   try {
     const user = await requireAuthenticatedUser();
     const supabase = createClient();
+
+    if (input.newCostPrice !== undefined && input.newCostPrice <= 0) {
+      return { success: false, error: "El costo de compra debe ser mayor a 0 para repuestos físicos." };
+    }
+
     const { data, error } = await supabase.rpc("register_stock_entry", {
       p_product_id: input.productId,
       p_quantity: Number(input.quantity),
@@ -96,7 +102,7 @@ export async function processPOSSale(
         if (!item.is_service && item.product_id) {
           const { data: prod } = await supabase
             .from("products")
-            .select("stock")
+            .select("stock, cost_price")
             .eq("id", item.product_id)
             .single();
 
@@ -113,6 +119,7 @@ export async function processPOSSale(
         product_id: i.product_id,
         type: "SALE_OUT",
         quantity: i.quantity,
+        unit_cost: i.is_service ? 0 : Math.max(0, Number(i.cost_price) || 0),
         reference_document: formattedRefDoc,
         cashier_email: user.email,
       }));
