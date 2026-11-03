@@ -1,5 +1,6 @@
-// lib/api/cash.ts
-import { createClient } from "@/lib/supabase/client";
+"use server";
+
+import { createClient } from "@/lib/supabase/server";
 import { requireAuthenticatedUser } from "@/lib/api/auth";
 
 export interface CashSession {
@@ -16,10 +17,11 @@ export interface CashSession {
 
 export async function getActiveCashSession(): Promise<CashSession | null> {
   try {
-    const supabase = createClient();
+    await requireAuthenticatedUser();
+    const supabase = await createClient();
     const { data, error } = await supabase
       .from("cash_sessions")
-      .select("*")
+      .select("id, opened_at, closed_at, monto_inicial, monto_final_sistema, monto_final_real, diferencia, status, cashier_email")
       .eq("status", "OPEN")
       .order("opened_at", { ascending: false })
       .limit(1)
@@ -39,7 +41,10 @@ export async function closeCashSession(
 ): Promise<{ success: boolean; error?: string }> {
   try {
     await requireAuthenticatedUser();
-    const supabase = createClient();
+    if (!sessionId || !Number.isFinite(montoSistema) || montoSistema < 0 || !Number.isFinite(montoReal) || montoReal < 0) {
+      return { success: false, error: "Los datos del cierre no son válidos." };
+    }
+    const supabase = await createClient();
     const diferencia = montoReal - montoSistema;
 
     const { error } = await supabase
@@ -54,7 +59,8 @@ export async function closeCashSession(
       .eq("id", sessionId);
 
     if (error) {
-      return { success: false, error: error.message };
+      console.error("cash close failed", { code: error.code });
+      return { success: false, error: "No fue posible cerrar la caja." };
     }
     return { success: true };
   } catch (error) {
@@ -66,7 +72,10 @@ export async function closeCashSession(
 export async function openCashSession(montoInicial: number = 0): Promise<{ success: boolean; data?: CashSession; error?: string }> {
   try {
     const user = await requireAuthenticatedUser();
-    const supabase = createClient();
+    if (!Number.isFinite(montoInicial) || montoInicial < 0) {
+      return { success: false, error: "El monto inicial no es válido." };
+    }
+    const supabase = await createClient();
 
     const { data, error } = await supabase
       .from("cash_sessions")
@@ -81,11 +90,12 @@ export async function openCashSession(montoInicial: number = 0): Promise<{ succe
           cashier_email: user.email,
         },
       ])
-      .select()
+      .select("id, opened_at, closed_at, monto_inicial, monto_final_sistema, monto_final_real, diferencia, status, cashier_email")
       .single();
 
     if (error || !data) {
-      return { success: false, error: error?.message || "No se pudo abrir la caja." };
+      console.error("cash open failed", { code: error?.code });
+      return { success: false, error: "No se pudo abrir la caja." };
     }
     return { success: true, data: data as CashSession };
   } catch (error) {

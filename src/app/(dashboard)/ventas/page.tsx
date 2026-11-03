@@ -53,8 +53,11 @@ export default function VentasPage() {
   };
 
   useEffect(() => {
-    loadPOSData();
-    if (searchInputRef.current) searchInputRef.current.focus();
+    const timer = window.setTimeout(() => {
+      void loadPOSData();
+      searchInputRef.current?.focus();
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, []);
 
   const addProductToCart = (product: Product): boolean => {
@@ -221,6 +224,7 @@ export default function VentasPage() {
       const refDoc = `POS-${Date.now().toString().slice(-6)}`;
       const checkoutItems = cart.map((i) => ({
         product_id: i.product_id || i.variant_id,
+        variant_id: i.variant_id,
         name: i.name,
         sku: i.sku,
         price: i.price,
@@ -229,8 +233,7 @@ export default function VentasPage() {
         is_service: i.is_service,
       }));
 
-      const totalAmount = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
-      const res = await processPOSSale(checkoutItems, refDoc, paymentMethod, totalAmount);
+      const res = await processPOSSale(checkoutItems, refDoc, paymentMethod);
 
       if (!res.success) {
         safeToast({

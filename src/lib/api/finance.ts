@@ -1,5 +1,7 @@
-// src/lib/api/finance.ts
-import { createClient } from "@/lib/supabase/client";
+"use server";
+
+import { createClient } from "@/lib/supabase/server";
+import { requireAuthenticatedUser } from "@/lib/api/auth";
 
 export interface FinancialSummary {
   totalIncome: number;      // Ingresos Totales (I)
@@ -20,6 +22,22 @@ export interface DailyTrendPoint {
   netProfit: number;
 }
 
+interface FinanceTransaction {
+  quantity: number | string | null;
+  unit_cost: number | string | null;
+  created_at: string;
+  products?: {
+    price?: number | string | null;
+    cost_price?: number | string | null;
+    is_service?: boolean | null;
+  } | null;
+}
+
+interface FinanceExpense {
+  amount: number | string | null;
+  date: string;
+}
+
 export async function getFinancialSummary(startDate: Date, endDate: Date): Promise<{
   summary: FinancialSummary;
   dailyTrends: DailyTrendPoint[];
@@ -35,7 +53,8 @@ export async function getFinancialSummary(startDate: Date, endDate: Date): Promi
   };
 
   try {
-    const supabase = createClient();
+    await requireAuthenticatedUser();
+    const supabase = await createClient();
     const startIso = startDate.toISOString();
     const endIso = endDate.toISOString();
 
@@ -78,7 +97,7 @@ export async function getFinancialSummary(startDate: Date, endDate: Date): Promi
     };
 
     if (txsData) {
-      txsData.forEach((tx: any) => {
+      (txsData as FinanceTransaction[]).forEach((tx) => {
         const qty = Number(tx.quantity) || 0;
         const price = Number(tx.products?.price) || 0;
         const isService = Boolean(tx.products?.is_service);
@@ -106,7 +125,7 @@ export async function getFinancialSummary(startDate: Date, endDate: Date): Promi
 
     let totalExpenses = 0;
     if (expData) {
-      expData.forEach((exp: any) => {
+      (expData as FinanceExpense[]).forEach((exp) => {
         const amt = Number(exp.amount) || 0;
         totalExpenses += amt;
 

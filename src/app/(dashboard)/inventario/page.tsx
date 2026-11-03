@@ -36,7 +36,8 @@ export default function InventarioPage() {
   };
 
   useEffect(() => {
-    loadCatalog();
+    const timer = window.setTimeout(() => void loadCatalog(), 0);
+    return () => window.clearTimeout(timer);
   }, []);
 
   /**

@@ -1,15 +1,18 @@
-// src/lib/api/audit.ts
-import { createClient } from "@/lib/supabase/client";
+"use server";
+
+import { createClient } from "@/lib/supabase/server";
+import { requireAuthenticatedUser } from "@/lib/api/auth";
 import { AuditLog } from "@/types";
 
 export async function getAuditLogs(limit: number = 100): Promise<AuditLog[]> {
   try {
-    const supabase = createClient();
+    await requireAuthenticatedUser();
+    const supabase = await createClient();
 
     // 1. Sesiones de caja (Aperturas, Cierres y Descuadres)
     const { data: sessions, error: sessError } = await supabase
       .from("cash_sessions")
-      .select("*")
+      .select("id, opened_at, closed_at, monto_inicial, monto_final_sistema, monto_final_real, diferencia, cashier_email")
       .order("opened_at", { ascending: false })
       .limit(limit);
 
@@ -20,7 +23,7 @@ export async function getAuditLogs(limit: number = 100): Promise<AuditLog[]> {
     // 2. Entradas de inventario y reabastecimiento
     const { data: stockEntries, error: stockError } = await supabase
       .from("inventory_transactions")
-      .select("*, products(sku, name)")
+      .select("id, quantity, reference_document, cashier_email, created_at, products(sku, name)")
       .in("type", ["PURCHASE_IN", "ADJUSTMENT_IN"])
       .order("created_at", { ascending: false })
       .limit(limit);
@@ -87,8 +90,9 @@ export async function getAuditLogs(limit: number = 100): Promise<AuditLog[]> {
 
     if (stockEntries) {
       stockEntries.forEach((tx) => {
-        const prodName = tx.products?.name || "Repuesto";
-        const sku = tx.products?.sku || "S/K";
+        const product = Array.isArray(tx.products) ? tx.products[0] : tx.products;
+        const prodName = product?.name || "Repuesto";
+        const sku = product?.sku || "S/K";
         const doc = tx.reference_document || "S/D";
         auditLogs.push({
           id: `stock-${tx.id}`,

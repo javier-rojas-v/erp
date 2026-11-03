@@ -1,7 +1,14 @@
-// src/lib/api/products.ts
-import { createClient } from "@/lib/supabase/client";
+"use server";
+
+import { createClient } from "@/lib/supabase/server";
 import { requireAuthenticatedUser } from "@/lib/api/auth";
 import { Product, MASTER_PRODUCT_CATEGORIES, MASTER_SERVICE_CATEGORIES, MutationResult } from "@/types";
+import type { InventoryTransactionRow } from "@/lib/api/transactions";
+
+export interface ProductQuery {
+  is_service?: boolean;
+  search?: string;
+}
 
 export interface CreateProductInput {
   sku: string;
@@ -20,7 +27,7 @@ export interface CreateProductInput {
 export async function createProduct(input: CreateProductInput): Promise<MutationResult<Product>> {
   try {
     const user = await requireAuthenticatedUser();
-    const supabase = createClient();
+    const supabase = await createClient();
     const isService = Boolean(input.is_service);
     const formattedSku = input.sku.trim().toUpperCase();
     const formattedName = input.name.trim();
@@ -51,7 +58,7 @@ export async function createProduct(input: CreateProductInput): Promise<Mutation
           is_service: isService,
         },
       ])
-      .select()
+      .select("id, sku, part_number_factory, barcode, name, category, brand, price, cost_price, stock, min_stock, is_service, created_at")
       .single();
 
     if (productError || !productData) {
@@ -84,7 +91,7 @@ export async function updateProduct(
 ): Promise<MutationResult<Product>> {
   try {
     await requireAuthenticatedUser();
-    const supabase = createClient();
+    const supabase = await createClient();
 
     const { data: currentProduct } = await supabase
       .from("products")
@@ -115,7 +122,7 @@ export async function updateProduct(
       .from("products")
       .update(updatePayload)
       .eq("id", id)
-      .select()
+      .select("id, sku, part_number_factory, barcode, name, category, brand, price, cost_price, stock, min_stock, is_service, created_at")
       .single();
 
     if (error || !data) {
@@ -129,10 +136,14 @@ export async function updateProduct(
   }
 }
 
-export async function getProducts(params?: any): Promise<Product[]> {
+export async function getProducts(params?: ProductQuery): Promise<Product[]> {
   try {
-    const supabase = createClient();
-    let query = supabase.from("products").select("*").order("created_at", { ascending: false });
+    await requireAuthenticatedUser();
+    const supabase = await createClient();
+    let query = supabase
+      .from("products")
+      .select("id, sku, part_number_factory, barcode, name, category, brand, price, cost_price, stock, min_stock, is_service, created_at")
+      .order("created_at", { ascending: false });
 
     if (params?.is_service !== undefined) {
       query = query.eq("is_service", params.is_service);
@@ -158,7 +169,8 @@ export async function getProducts(params?: any): Promise<Product[]> {
 
 export async function getCategories(isService: boolean = false): Promise<string[]> {
   try {
-    const supabase = createClient();
+    await requireAuthenticatedUser();
+    const supabase = await createClient();
     const { data, error } = await supabase
       .from("products")
       .select("category")
@@ -184,7 +196,7 @@ export async function getCategories(isService: boolean = false): Promise<string[
 export async function bulkCreateProducts(productsList: CreateProductInput[]): Promise<MutationResult<number>> {
   try {
     const user = await requireAuthenticatedUser();
-    const supabase = createClient();
+    const supabase = await createClient();
 
     const formattedProducts = productsList.map((p) => {
       const isSrv = Boolean(p.is_service);
@@ -241,7 +253,7 @@ export async function bulkCreateProducts(productsList: CreateProductInput[]): Pr
     const { data: insertedProducts, error } = await supabase
       .from("products")
       .upsert(formattedProducts, { onConflict: "sku" })
-      .select();
+      .select("id, sku, part_number_factory, barcode, name, category, brand, price, cost_price, stock, min_stock, is_service, created_at");
 
     if (error) {
       return { success: false, data: 0, insertedCount: 0, error: error.message };
@@ -273,18 +285,60 @@ export async function bulkCreateProducts(productsList: CreateProductInput[]): Pr
   }
 }
 
-export async function getProductKardex(productId: string): Promise<any[]> {
+export async function getProductKardex(productId: string): Promise<InventoryTransactionRow[]> {
   try {
-    const supabase = createClient();
+    await requireAuthenticatedUser();
+    const supabase = await createClient();
     const { data, error } = await supabase
       .from("inventory_transactions")
-      .select("*")
+      .select("id, product_id, type, quantity, unit_cost, reference_document, cashier_email, sale_group_id, created_at")
       .eq("product_id", productId)
       .order("created_at", { ascending: false });
 
     if (error) return [];
-    return data || [];
+    return (data as InventoryTransactionRow[]) || [];
   } catch {
     return [];
   }
 }
+
+export async function updateCategoryName(
+  currentName: string,
+  nextName: string,
+  isService: boolean = false
+): Promise<MutationResult<number>> {
+  try {
+    await requireAuthenticatedUser();
+    const source = currentName.trim();
+    const target = nextName.trim();
+    if (!source || target.length < 2 || target.length > 80) {
+      return { success: false, error: "El nombre de categoría no es válido." };
+    }
+
+    const supabase = await createClient();
+    const { data, error } = await supabase
+      .from("products")
+      .update({ category: target })
+      .eq("category", source)
+      .eq("is_service", isService)
+      .select("id");
+
+    if (error) {
+      console.error("category rename failed", { code: error.code });
+      return { success: false, error: "No fue posible actualizar la categoría." };
+    }
+    return { success: true, data: data?.length || 0, insertedCount: data?.length || 0 };
+  } catch {
+    return { success: false, error: "No fue posible actualizar la categoría." };
+  }
+}
+
+export async function deleteCategoryAndReassign(
+  category: string,
+  replacement: string,
+  isService: boolean = false
+): Promise<MutationResult<number>> {
+  return updateCategoryName(category, replacement, isService);
+}
+
+export type { InventoryTransactionRow };

@@ -1,5 +1,6 @@
-// src/lib/api/expenses.ts
-import { createClient } from "@/lib/supabase/client";
+"use server";
+
+import { createClient } from "@/lib/supabase/server";
 import { requireAuthenticatedUser } from "@/lib/api/auth";
 import { Expense, ExpenseCategory, MutationResult } from "@/types";
 
@@ -12,10 +13,11 @@ export interface CreateExpenseInput {
 
 export async function getExpenses(startDate?: Date, endDate?: Date): Promise<Expense[]> {
   try {
-    const supabase = createClient();
+    await requireAuthenticatedUser();
+    const supabase = await createClient();
     let query = supabase
       .from("expenses")
-      .select("*")
+      .select("id, category, amount, description, date, cashier_email, created_at")
       .order("date", { ascending: false });
 
     if (startDate) {
@@ -40,7 +42,7 @@ export async function getExpenses(startDate?: Date, endDate?: Date): Promise<Exp
 export async function createExpense(input: CreateExpenseInput): Promise<MutationResult<Expense>> {
   try {
     const user = await requireAuthenticatedUser();
-    const supabase = createClient();
+    const supabase = await createClient();
 
     const amountNum = Math.max(0, Number(input.amount) || 0);
     if (amountNum <= 0) {
@@ -64,11 +66,12 @@ export async function createExpense(input: CreateExpenseInput): Promise<Mutation
           cashier_email: user.email,
         },
       ])
-      .select()
+      .select("id, category, amount, description, date, cashier_email, created_at")
       .single();
 
     if (error || !data) {
-      return { success: false, error: error?.message || "No se pudo registrar el egreso." };
+      console.error("expense insert failed", { code: error?.code, userId: user.id });
+      return { success: false, error: "No se pudo registrar el egreso." };
     }
 
     return { success: true, data: data as Expense };

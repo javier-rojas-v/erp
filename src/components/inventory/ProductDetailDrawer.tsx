@@ -19,10 +19,13 @@ export function ProductDetailDrawer({ product, onClose }: ProductDetailDrawerPro
 
   useEffect(() => {
     if (product && activeTab === "kardex") {
-      setIsLoadingKardex(true);
-      getProductKardex(product.id)
-        .then((txs) => setKardexList(txs))
-        .finally(() => setIsLoadingKardex(false));
+      const timer = window.setTimeout(() => {
+        setIsLoadingKardex(true);
+        void getProductKardex(product.id)
+          .then((txs) => setKardexList(txs))
+          .finally(() => setIsLoadingKardex(false));
+      }, 0);
+      return () => window.clearTimeout(timer);
     }
   }, [product, activeTab]);
 
@@ -221,7 +224,7 @@ export function ProductDetailDrawer({ product, onClose }: ProductDetailDrawerPro
                       tx.type === "PURCHASE_IN"
                         ? "Entrada por Reabastecimiento"
                         : tx.type === "SALE_OUT"
-                        ? "Venta en Mesón"
+                        ? `Venta en Mesón [Ticket: ${tx.sale_group_id ? 'VEN-' + tx.sale_group_id.slice(0, 8).toUpperCase() : tx.reference_document}]`
                         : tx.type === "ADJUSTMENT_IN"
                         ? "Ingreso de Carga Masiva / Ajuste"
                         : "Ajuste de Stock";

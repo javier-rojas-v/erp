@@ -3,7 +3,7 @@
 
 import { useState, useEffect } from "react";
 import { getProducts } from "@/lib/api/products";
-import { registerStockEntry, getAllInventoryTransactions } from "@/lib/api/transactions";
+import { registerStockEntry, getAllInventoryTransactions, InventoryTransactionRow } from "@/lib/api/transactions";
 import { Product } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,7 +22,7 @@ import { Truck, Plus, FileText, Loader2 } from "lucide-react";
 export default function EntradasPage() {
   const [catalog, setCatalog] = useState<Product[]>([]);
   const [isLoadingCatalog, setIsLoadingCatalog] = useState(true);
-  const [transactions, setTransactions] = useState<any[]>([]);
+  const [transactions, setTransactions] = useState<InventoryTransactionRow[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedProductId, setSelectedProductId] = useState<string>("");
   const [invoiceNumber, setInvoiceNumber] = useState("");
@@ -48,7 +48,8 @@ export default function EntradasPage() {
   };
 
   useEffect(() => {
-    loadData();
+    const timer = window.setTimeout(() => void loadData(), 0);
+    return () => window.clearTimeout(timer);
   }, []);
 
   const handleProductSelectChange = (prodId: string) => {

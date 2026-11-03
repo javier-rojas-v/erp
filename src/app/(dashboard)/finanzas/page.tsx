@@ -1,5 +1,6 @@
 // src/app/(dashboard)/finanzas/page.tsx
 "use client";
+/* eslint-disable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
 
 import { useState, useEffect, useMemo } from "react";
 import { getFinancialSummary, FinancialSummary, DailyTrendPoint } from "@/lib/api/finance";

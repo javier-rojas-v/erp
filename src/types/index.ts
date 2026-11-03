@@ -35,7 +35,7 @@ export const MASTER_SERVICE_CATEGORIES: ServiceCategory[] = [
   'Alineación y Balanceo',
 ];
 
-export interface MutationResult<T = any> {
+export interface MutationResult<T = unknown> {
   success: boolean;
   data?: T;
   error?: string;
@@ -94,6 +94,6 @@ export interface AuditLog {
   event_type: 'CASH_OPEN' | 'CASH_CLOSE' | 'DISCREPANCY' | 'STOCK_ENTRY' | 'SYSTEM_ALERT';
   description: string;
   cashier_email: string;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
   created_at: string;
 }

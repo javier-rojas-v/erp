@@ -1,5 +1,5 @@
 // lib/api/auth.ts
-import { createClient } from "@/lib/supabase/client";
+import { createClient } from "@/lib/supabase/server";
 
 export interface AuthenticatedUser {
   id: string;
@@ -11,7 +11,7 @@ export interface AuthenticatedUser {
  * Lanza un error explícito si no hay una sesión activa, impidiendo fallbacks inseguros.
  */
 export async function requireAuthenticatedUser(): Promise<AuthenticatedUser> {
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data: { user }, error } = await supabase.auth.getUser();
 
   if (error || !user || !user.email) {

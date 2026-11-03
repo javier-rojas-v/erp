@@ -3,9 +3,6 @@ import { Topbar } from "@/components/layout/topbar";
 import { requireUser } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 
-// Indica a Next.js 16 (cacheComponents) que este segmento es una ruta bloqueante y no debe prerenderizarse
-export const instant = false;
-
 export default async function DashboardLayout({
   children,
 }: {

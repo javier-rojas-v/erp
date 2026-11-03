@@ -45,7 +45,8 @@ export function ProductCreateModal({ isOpen, onClose, onSuccess }: ProductCreate
 
   useEffect(() => {
     if (isOpen) {
-      loadCategoryOptions(isService);
+      const timer = window.setTimeout(() => void loadCategoryOptions(isService), 0);
+      return () => window.clearTimeout(timer);
     }
   }, [isOpen, isService]);
 

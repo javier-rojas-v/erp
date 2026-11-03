@@ -1,5 +1,7 @@
-// lib/api/dashboard.ts
-import { createClient } from "@/lib/supabase/client";
+"use server";
+
+import { createClient } from "@/lib/supabase/server";
+import { requireAuthenticatedUser } from "@/lib/api/auth";
 
 export interface DashboardStats {
   todaySalesTotal: number;
@@ -23,7 +25,8 @@ export async function getDashboardStats(): Promise<DashboardStats> {
   };
 
   try {
-    const supabase = createClient();
+    await requireAuthenticatedUser();
+    const supabase = await createClient();
     const { data, error } = await supabase.rpc("get_dashboard_stats");
 
     if (error || !data) {

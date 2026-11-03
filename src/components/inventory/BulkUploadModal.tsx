@@ -21,6 +21,12 @@ interface ValidationError {
   message: string;
 }
 
+type SpreadsheetCell = string | number | boolean | null | undefined;
+type SpreadsheetRow = Record<string, SpreadsheetCell>;
+
+const MAX_IMPORT_BYTES = 5 * 1024 * 1024;
+const MAX_IMPORT_ROWS = 5_000;
+
 export function BulkUploadModal({ isOpen, onClose, onSuccess, onDownloadTemplate }: BulkUploadModalProps) {
   const [bulkFile, setBulkFile] = useState<File | null>(null);
   const [bulkParsedData, setBulkParsedData] = useState<CreateProductInput[]>([]);
@@ -34,7 +40,7 @@ export function BulkUploadModal({ isOpen, onClose, onSuccess, onDownloadTemplate
    * Helper para extraer el valor de la celda de una fila sin importar la variación
    * en el casing de las cabeceras (mayúsculas/minúsculas) o sinónimos comunes.
    */
-  const getRowValue = (rowObj: Record<string, any>, keyNames: string[]): any => {
+  const getRowValue = (rowObj: SpreadsheetRow, keyNames: string[]): SpreadsheetCell => {
     for (const key of Object.keys(rowObj)) {
       const normalizedKey = key.trim().toLowerCase();
       if (keyNames.includes(normalizedKey)) {
@@ -48,6 +54,12 @@ export function BulkUploadModal({ isOpen, onClose, onSuccess, onDownloadTemplate
     const file = e.target.files?.[0];
     if (!file) return;
 
+    if (file.size > MAX_IMPORT_BYTES) {
+      toast({ title: "Archivo demasiado grande", description: "El archivo no puede superar 5 MB.", type: "warning" });
+      e.target.value = "";
+      return;
+    }
+
     setBulkFile(file);
     setIsParsingBulk(true);
     setValidationErrors([]);
@@ -58,10 +70,16 @@ export function BulkUploadModal({ isOpen, onClose, onSuccess, onDownloadTemplate
       const workbook = XLSX.read(arrayBuffer, { type: "array" });
       const firstSheetName = workbook.SheetNames[0];
       const worksheet = workbook.Sheets[firstSheetName];
-      const rawData = XLSX.utils.sheet_to_json<Record<string, any>>(worksheet);
+      const rawData = XLSX.utils.sheet_to_json<SpreadsheetRow>(worksheet);
 
       if (!rawData || rawData.length === 0) {
         toast({ title: "Archivo vacío", description: "El archivo no contiene registros.", type: "warning" });
+        setIsParsingBulk(false);
+        return;
+      }
+
+      if (rawData.length > MAX_IMPORT_ROWS) {
+        toast({ title: "Demasiados registros", description: "La carga masiva admite hasta 5.000 filas.", type: "warning" });
         setIsParsingBulk(false);
         return;
       }
@@ -107,7 +125,7 @@ export function BulkUploadModal({ isOpen, onClose, onSuccess, onDownloadTemplate
         const result = productSchema.safeParse(formattedInput);
 
         if (!result.success) {
-          const firstErrorMsg = result.error.errors[0]?.message || "Datos inválidos";
+          const firstErrorMsg = result.error.issues[0]?.message || "Datos inválidos";
           const skuDisplay = formattedInput.sku || "VACÍO";
           errors.push({
             row: excelRowNumber,

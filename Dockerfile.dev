@@ -8,7 +8,7 @@ RUN corepack enable
 # Copiar solo archivos de dependencias primero para aprovechar la caché de Docker
 COPY package.json package-lock.json* ./
 
-RUN npm install
+RUN npm ci --no-audit --no-fund
 
 # Copiar el resto del código
 COPY . .

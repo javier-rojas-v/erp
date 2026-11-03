@@ -3,7 +3,7 @@
 
 import { useState, useEffect } from "react";
 import { getActiveCashSession, closeCashSession, openCashSession, CashSession } from "@/lib/api/cash";
-import { getTodaySales } from "@/lib/api/transactions";
+import { getTodaySales, TodaySaleRow } from "@/lib/api/transactions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -23,13 +23,17 @@ import {
 
 export default function HistorialCajaPage() {
   const [activeSession, setActiveSession] = useState<CashSession | null>(null);
-  const [salesHistory, setSalesHistory] = useState<any[]>([]);
+  const [salesHistory, setSalesHistory] = useState<TodaySaleRow[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isClosingModalOpen, setIsClosingModalOpen] = useState(false);
   const [cashCounted, setCashCounted] = useState<string>("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [closedSessionSummary, setClosedSessionSummary] = useState<any>(null);
+  const [closedSessionSummary, setClosedSessionSummary] = useState<{
+    monto_final_sistema: number;
+    monto_final_real: number;
+    diferencia: number;
+  } | null>(null);
 
   const loadData = async () => {
     setIsLoading(true);
@@ -43,7 +47,8 @@ export default function HistorialCajaPage() {
   };
 
   useEffect(() => {
-    loadData();
+    const timer = window.setTimeout(() => void loadData(), 0);
+    return () => window.clearTimeout(timer);
   }, []);
 
   const activeSales = salesHistory.filter((s) => s.status === "COMPLETED");

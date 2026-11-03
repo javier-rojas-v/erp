@@ -39,7 +39,8 @@ export default function AuditoriaPage() {
   };
 
   useEffect(() => {
-    loadAuditData();
+    const timer = window.setTimeout(() => void loadAuditData(), 0);
+    return () => window.clearTimeout(timer);
   }, []);
 
   const filteredLogs = useMemo(() => {
