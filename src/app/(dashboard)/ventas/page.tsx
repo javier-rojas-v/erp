@@ -1,11 +1,12 @@
 // src/app/(dashboard)/ventas/page.tsx
+
 "use client";
 
 import { useState, useEffect, useRef, useMemo } from "react";
 import { getProducts } from "@/lib/api/products";
 import { processPOSSale } from "@/lib/api/transactions";
-import { getActiveCashSession, CashSession } from "@/lib/api/cash";
-import { Product, CartItem } from "@/types";
+import { getActiveCashSession } from "@/lib/api/cash";
+import { Product, CartItem, CashSession } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -66,7 +67,6 @@ export default function VentasPage() {
       });
       return false;
     }
-
     if (!product.is_service && (product.cost_price === undefined || product.cost_price <= 0)) {
       safeToast({
         title: "Costo no asignado",
@@ -201,7 +201,6 @@ export default function VentasPage() {
       });
       return;
     }
-
     if (cart.length === 0) return;
 
     for (const item of cart) {
@@ -216,9 +215,7 @@ export default function VentasPage() {
     }
 
     setIsProcessing(true);
-
     try {
-      const refDoc = `POS-${Date.now().toString().slice(-6)}`;
       const checkoutItems = cart.map((i) => ({
         product_id: i.product_id || i.variant_id,
         name: i.name,
@@ -230,7 +227,7 @@ export default function VentasPage() {
       }));
 
       const totalAmount = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
-      const res = await processPOSSale(checkoutItems, refDoc, paymentMethod, totalAmount);
+      const res = await processPOSSale(checkoutItems, "", paymentMethod, totalAmount);
 
       if (!res.success) {
         safeToast({
@@ -318,6 +315,7 @@ export default function VentasPage() {
             isLoading={isLoading}
             onAddService={addServiceProductToCart}
           />
+
           <div className="relative">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input

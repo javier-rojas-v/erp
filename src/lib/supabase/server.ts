@@ -1,6 +1,8 @@
+// src/lib/supabase/server.ts
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { connection } from "next/server";
+import { UserRole } from "@/types";
 
 export async function createClient() {
   await connection();
@@ -38,6 +40,15 @@ export async function requireUser() {
     data: { user },
     error,
   } = await supabase.auth.getUser();
+
   if (error || !user) throw new Error("UNAUTHORIZED");
-  return { supabase, user };
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  const role: UserRole = profile?.role === "admin" ? "admin" : "manager";
+  return { supabase, user, role };
 }

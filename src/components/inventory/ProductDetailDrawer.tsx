@@ -1,9 +1,10 @@
-// components/inventory/ProductDetailDrawer.tsx
+// src/components/inventory/ProductDetailDrawer.tsx
+
 "use client";
 
 import { useEffect, useState } from "react";
 import { Product } from "@/types";
-import { getProductKardex, InventoryTransactionRow } from "@/lib/api/products";
+import { getProductKardex } from "@/lib/api/products";
 import { Button } from "@/components/ui/button";
 import { X, Box, History, DollarSign, Layers, AlertTriangle, Barcode, Tag, Wrench, Loader2 } from "lucide-react";
 
@@ -14,12 +15,11 @@ interface ProductDetailDrawerProps {
 
 export function ProductDetailDrawer({ product, onClose }: ProductDetailDrawerProps) {
   const [activeTab, setActiveTab] = useState<"info" | "kardex">("info");
-  const [kardexList, setKardexList] = useState<InventoryTransactionRow[]>([]);
+  const [kardexList, setKardexList] = useState<any[]>([]);
   const [isLoadingKardex, setIsLoadingKardex] = useState(false);
 
   useEffect(() => {
-    if (product && activeTab === "kardex") {
-      setIsLoadingKardex(true);
+    if (product && activeTab === "kardex") {      setIsLoadingKardex(true);
       getProductKardex(product.id)
         .then((txs) => setKardexList(txs))
         .finally(() => setIsLoadingKardex(false));
@@ -34,7 +34,6 @@ export function ProductDetailDrawer({ product, onClose }: ProductDetailDrawerPro
     <>
       <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-40 transition-opacity" onClick={onClose} />
       <div className="fixed inset-y-0 right-0 z-50 w-full md:w-[580px] bg-card shadow-2xl border-l border-border flex flex-col animate-in slide-in-from-right-full duration-300">
-        
         {/* Cabecera Polimórfica */}
         <div className="flex items-center justify-between p-6 border-b border-border bg-muted/20">
           <div>
@@ -49,14 +48,12 @@ export function ProductDetailDrawer({ product, onClose }: ProductDetailDrawerPro
                   {product.brand}
                 </span>
               )}
-              
               <span className="font-mono text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded border border-border">
                 Código: {product.sku}
               </span>
             </div>
             <h2 className="text-xl font-bold leading-tight">{product.name}</h2>
           </div>
-          
           <Button variant="ghost" size="icon" onClick={onClose}>
             <X className="h-5 w-5" />
           </Button>
@@ -86,8 +83,6 @@ export function ProductDetailDrawer({ product, onClose }: ProductDetailDrawerPro
         <div className="flex-1 overflow-y-auto p-6">
           {activeTab === "info" && (
             <div className="space-y-6">
-              
-              {/* Tarjetas Superiores */}
               {isService ? (
                 <div className="grid grid-cols-2 gap-4">
                   <div className="p-4 rounded-xl bg-muted/30 border border-border flex flex-col justify-between">
@@ -98,7 +93,6 @@ export function ProductDetailDrawer({ product, onClose }: ProductDetailDrawerPro
                       ${product.price.toLocaleString("es-CL")}
                     </p>
                   </div>
-
                   <div className="p-4 rounded-xl bg-blue-500/10 border border-blue-500/20 flex flex-col justify-between">
                     <span className="text-xs text-blue-400 font-medium flex items-center gap-1">
                       <Wrench className="h-3.5 w-3.5" /> Disponibilidad
@@ -131,7 +125,6 @@ export function ProductDetailDrawer({ product, onClose }: ProductDetailDrawerPro
                 </div>
               )}
 
-              {/* Indicador de Estado (Solo para Repuestos Físicos) */}
               {!isService && (
                 <div
                   className={`p-4 rounded-xl border flex items-center gap-3 ${
@@ -156,25 +149,21 @@ export function ProductDetailDrawer({ product, onClose }: ProductDetailDrawerPro
                 </div>
               )}
 
-              {/* Ficha Informativa Estandarizada */}
               <div className="rounded-xl border border-border bg-card p-4 space-y-3">
                 <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground border-b border-border pb-2">
                   {isService ? "Detalles del Servicio de Taller" : "Detalles Técnicos e Identificación"}
                 </h4>
-
                 <div className="grid grid-cols-2 gap-y-3 text-xs">
                   <div>
                     <span className="text-muted-foreground block">Categoría Estandarizada:</span>
                     <span className="font-semibold text-foreground">{product.category}</span>
                   </div>
-
                   <div>
                     <span className="text-muted-foreground block">
                       {isService ? "Proveedor / Responsable:" : "Marca Comercial:"}
                     </span>
                     <span className="font-semibold text-foreground">{product.brand || "Taller TITO"}</span>
                   </div>
-
                   {!isService && (
                     <>
                       <div>
@@ -197,13 +186,11 @@ export function ProductDetailDrawer({ product, onClose }: ProductDetailDrawerPro
             </div>
           )}
 
-          {/* Historial / Kardex */}
           {activeTab === "kardex" && (
             <div className="space-y-3">
               <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">
                 {isService ? "Bitácora de Prestaciones y Ventas" : "Bitácora de Entradas y Salidas"}
               </h4>
-
               {isLoadingKardex ? (
                 <div className="flex items-center justify-center gap-2 py-10 text-xs text-muted-foreground">
                   <Loader2 className="h-4 w-4 animate-spin text-primary" />
@@ -217,11 +204,12 @@ export function ProductDetailDrawer({ product, onClose }: ProductDetailDrawerPro
                 <div className="space-y-2">
                   {kardexList.map((tx) => {
                     const isEntry = tx.type === "PURCHASE_IN" || tx.type === "ADJUSTMENT_IN" || tx.type === "INITIAL_STOCK";
+                    const saleDocRef = tx.sales?.reference_document || (tx.sale_id ? `VEN-${tx.sale_id.slice(0, 8).toUpperCase()}` : tx.reference_document);
                     const typeLabel =
                       tx.type === "PURCHASE_IN"
                         ? "Entrada por Reabastecimiento"
                         : tx.type === "SALE_OUT"
-                        ? "Venta en Mesón"
+                        ? `Venta en Mesón [Ref: ${saleDocRef || "POS"}]`
                         : tx.type === "ADJUSTMENT_IN"
                         ? "Ingreso de Carga Masiva / Ajuste"
                         : "Ajuste de Stock";
@@ -230,7 +218,7 @@ export function ProductDetailDrawer({ product, onClose }: ProductDetailDrawerPro
                       <div key={tx.id} className="p-3 rounded-lg border border-border bg-muted/20 flex items-center justify-between text-xs">
                         <div className="flex flex-col gap-0.5">
                           <span className="font-bold text-foreground">{typeLabel}</span>
-                          <span className="text-muted-foreground text-[11px]">Doc: {tx.reference_document || "Sin ref."}</span>
+                          <span className="text-muted-foreground text-[11px]">Doc / Ref: {saleDocRef || "Sin ref."}</span>
                           <span className="text-[10px] text-muted-foreground">Por: {tx.cashier_email}</span>
                         </div>
                         <div className="text-right">

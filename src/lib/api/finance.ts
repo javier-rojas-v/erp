@@ -3,12 +3,12 @@ import { createClient } from "@/lib/supabase/client";
 
 export interface FinancialSummary {
   totalIncome: number;      // Ingresos Totales (I)
-  cogs: number;             // Costo de Ventas (C)
-  grossProfit: number;      // Ganancia Bruta (GB = I - C)
-  grossMarginPct: number;   // Margen Bruto % (GB / I * 100)
+  cogs: number;             // Costo de Ventas (COGS)
+  grossProfit: number;      // Ganancia Bruta (GB = I - COGS)
+  grossMarginPct: number;   // Margen Bruto %
   totalExpenses: number;    // Gastos Operativos (G)
   netProfit: number;        // Ganancia Neta Operativa (GN = GB - G)
-  netMarginPct: number;     // Margen Neto % (GN / I * 100)
+  netMarginPct: number;     // Margen Neto %
 }
 
 export interface DailyTrendPoint {
@@ -39,78 +39,135 @@ export async function getFinancialSummary(startDate: Date, endDate: Date): Promi
     const startIso = startDate.toISOString();
     const endIso = endDate.toISOString();
 
-    // 1. Consulta de ventas uniendo unit_cost congelado y fallback del catálogo maestro
-    const { data: txsData, error: txsError } = await supabase
-      .from("inventory_transactions")
-      .select("id, quantity, unit_cost, created_at, products(price, cost_price, is_service)")
-      .eq("type", "SALE_OUT")
+    // 1. Obtención desacoplada de ventas en el período
+    let { data: salesData, error: salesErr } = await supabase
+      .from("sales")
+      .select("id, created_at, total_amount, cashier_email, payment_method, reference_document")
       .gte("created_at", startIso)
-      .lte("created_at", endIso);
+      .lte("created_at", endIso)
+      .order("created_at", { ascending: true });
 
-    if (txsError) {
-      console.error("Error al consultar transacciones de ventas en BI:", txsError.message);
+    if (salesErr || !salesData) {
+      console.warn("Fallo al obtener ventas por rango de fechas en BI:", salesErr?.message);
+      const fallback = await supabase
+        .from("sales")
+        .select("id, created_at, total_amount, cashier_email, payment_method, reference_document")
+        .order("created_at", { ascending: true });
+      salesData = fallback.data || [];
     }
 
-    // 2. Consulta de egresos operativos
-    const { data: expData, error: expError } = await supabase
-      .from("expenses")
-      .select("amount, date")
-      .gte("date", startIso)
-      .lte("date", endIso);
+    const sales = salesData || [];
+    const saleIds = sales.map((s: any) => s.id).filter(Boolean);
 
-    if (expError) {
-      console.error("Error al consultar gastos en BI:", expError.message);
+    // 2. Obtención de ítems de ventas para cálculo de COGS
+    const saleItemsMap = new Map<string, Array<{ quantity: number; unit_price: number; unit_cost: number; product_id: string }>>();
+    if (saleIds.length > 0) {
+      const { data: itemsData, error: itemsErr } = await supabase
+        .from("sale_items")
+        .select("sale_id, product_id, quantity, unit_price, unit_cost")
+        .in("sale_id", saleIds);
+
+      if (!itemsErr && itemsData) {
+        itemsData.forEach((item: any) => {
+          const list = saleItemsMap.get(item.sale_id) || [];
+          list.push({
+            quantity: Number(item.quantity) || 0,
+            unit_price: Number(item.unit_price) || 0,
+            unit_cost: Number(item.unit_cost) || 0,
+            product_id: item.product_id,
+          });
+          saleItemsMap.set(item.sale_id, list);
+        });
+      }
+    }
+
+    // 3. Obtención de gastos operativos
+    let { data: expData, error: expErr } = await supabase
+      .from("expenses")
+      .select("id, category, amount, description, date, cashier_email")
+      .gte("date", startIso)
+      .lte("date", endIso)
+      .order("date", { ascending: true });
+
+    if (expErr || !expData) {
+      console.warn("Fallo al obtener gastos por rango de fechas:", expErr?.message);
+      const fallbackExp = await supabase
+        .from("expenses")
+        .select("id, category, amount, description, date, cashier_email")
+        .order("date", { ascending: true });
+      expData = fallbackExp.data || [];
+    }
+
+    const expensesList = expData || [];
+
+    // 4. Catálogo de productos para verificación de servicio y costo base
+    const { data: prodsData } = await supabase
+      .from("products")
+      .select("id, is_service, cost_price");
+
+    const productMap = new Map<string, { is_service: boolean; cost_price: number }>();
+    if (prodsData) {
+      prodsData.forEach((p: any) => {
+        productMap.set(p.id, {
+          is_service: Boolean(p.is_service),
+          cost_price: Number(p.cost_price) || 0,
+        });
+      });
     }
 
     let totalIncome = 0;
     let totalCogs = 0;
     const dailyMap: Record<string, { income: number; cogs: number; expenses: number }> = {};
 
-    // Estandarización determinista de fecha bajo la zona horaria oficial America/Santiago
     const getDayKey = (dateStr: string) => {
-      const d = new Date(dateStr);
-      return d.toLocaleDateString("es-CL", {
-        timeZone: "America/Santiago",
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-      });
+      try {
+        const d = new Date(dateStr);
+        const yearStr = new Intl.DateTimeFormat("en-US", { timeZone: "America/Santiago", year: "numeric" }).format(d);
+        const monthStr = new Intl.DateTimeFormat("en-US", { timeZone: "America/Santiago", month: "2-digit" }).format(d);
+        const dayStr = new Intl.DateTimeFormat("en-US", { timeZone: "America/Santiago", day: "2-digit" }).format(d);
+        return `${dayStr}/${monthStr}/${yearStr}`;
+      } catch {
+        return dateStr.slice(0, 10);
+      }
     };
 
-    if (txsData) {
-      txsData.forEach((tx: any) => {
-        const qty = Number(tx.quantity) || 0;
-        const price = Number(tx.products?.price) || 0;
-        const isService = Boolean(tx.products?.is_service);
-        
-        // Inmutabilidad del COGS: Preferir unit_cost snapshot de la transacción.
-        // Si no existe (ventas históricas previas a la migración), usar products.cost_price como fallback.
-        const snapshotCost = Number(tx.unit_cost);
-        const fallbackCost = Number(tx.products?.cost_price) || 0;
-        const costPrice = isService ? 0 : (snapshotCost > 0 ? snapshotCost : fallbackCost);
-
-        const income = qty * price;
-        const cogs = qty * costPrice;
-
-        totalIncome += income;
-        totalCogs += cogs;
-
-        const key = getDayKey(tx.created_at);
+    if (sales.length > 0) {
+      sales.forEach((sale: any) => {
+        const key = getDayKey(sale.created_at);
         if (!dailyMap[key]) {
           dailyMap[key] = { income: 0, cogs: 0, expenses: 0 };
         }
-        dailyMap[key].income += income;
-        dailyMap[key].cogs += cogs;
+
+        const saleTotal = Number(sale.total_amount) || 0;
+        totalIncome += saleTotal;
+        dailyMap[key].income += saleTotal;
+
+        const items = saleItemsMap.get(sale.id);
+        if (items && items.length > 0) {
+          items.forEach((item) => {
+            const qty = item.quantity;
+            const prodInfo = item.product_id ? productMap.get(item.product_id) : undefined;
+            const isService = prodInfo ? prodInfo.is_service : false;
+
+            let unitCost = 0;
+            if (!isService) {
+              unitCost = item.unit_cost > 0 ? item.unit_cost : (prodInfo?.cost_price || 0);
+            }
+
+            const itemCogs = qty * unitCost;
+            totalCogs += itemCogs;
+            dailyMap[key].cogs += itemCogs;
+          });
+        }
       });
     }
 
     let totalExpenses = 0;
-    if (expData) {
-      expData.forEach((exp: any) => {
+    if (expensesList.length > 0) {
+      expensesList.forEach((exp: any) => {
         const amt = Number(exp.amount) || 0;
         totalExpenses += amt;
-
-        const key = getDayKey(exp.date);
+        const key = getDayKey(exp.date || exp.created_at);
         if (!dailyMap[key]) {
           dailyMap[key] = { income: 0, cogs: 0, expenses: 0 };
         }
@@ -125,9 +182,13 @@ export async function getFinancialSummary(startDate: Date, endDate: Date): Promi
 
     const dailyTrends: DailyTrendPoint[] = Object.keys(dailyMap)
       .sort((a, b) => {
-        const [dA, mA, yA] = a.split("/").map(Number);
-        const [dB, mB, yB] = b.split("/").map(Number);
-        return new Date(yA, mA - 1, dA).getTime() - new Date(yB, mB - 1, dB).getTime();
+        const cleanA = a.replace(/[^\d/]/g, "");
+        const cleanB = b.replace(/[^\d/]/g, "");
+        const partsA = cleanA.split("/").map(Number);
+        const partsB = cleanB.split("/").map(Number);
+        const dateA = new Date(partsA[2] || 2026, (partsA[1] || 1) - 1, partsA[0] || 1).getTime();
+        const dateB = new Date(partsB[2] || 2026, (partsB[1] || 1) - 1, partsB[0] || 1).getTime();
+        return dateA - dateB;
       })
       .map((key) => {
         const item = dailyMap[key];

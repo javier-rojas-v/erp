@@ -21,6 +21,7 @@ export async function createProduct(input: CreateProductInput): Promise<Mutation
   try {
     const user = await requireAuthenticatedUser();
     const supabase = createClient();
+
     const isService = Boolean(input.is_service);
     const formattedSku = input.sku.trim().toUpperCase();
     const formattedName = input.name.trim();
@@ -49,6 +50,7 @@ export async function createProduct(input: CreateProductInput): Promise<Mutation
           stock: formattedStock,
           min_stock: formattedMinStock,
           is_service: isService,
+          is_active: true,
         },
       ])
       .select()
@@ -67,6 +69,7 @@ export async function createProduct(input: CreateProductInput): Promise<Mutation
           unit_cost: formattedCostPrice,
           reference_document: "INVENTARIO_INICIAL",
           cashier_email: user.email,
+          user_id: user.id,
         },
       ]);
     }
@@ -93,7 +96,7 @@ export async function updateProduct(
       .single();
 
     const willBeService = input.is_service !== undefined ? Boolean(input.is_service) : Boolean(currentProduct?.is_service);
-    
+
     if (input.cost_price !== undefined && !willBeService && Number(input.cost_price) <= 0) {
       return { success: false, error: "El costo de compra debe ser mayor a 0 para repuestos físicos." };
     }
@@ -129,10 +132,18 @@ export async function updateProduct(
   }
 }
 
-export async function getProducts(params?: any): Promise<Product[]> {
+export async function getProducts(params?: {
+  is_service?: boolean;
+  includeInactive?: boolean;
+  search?: string;
+}): Promise<Product[]> {
   try {
     const supabase = createClient();
     let query = supabase.from("products").select("*").order("created_at", { ascending: false });
+
+    if (!params?.includeInactive) {
+      query = query.eq("is_active", true); // Soft delete filter por defecto
+    }
 
     if (params?.is_service !== undefined) {
       query = query.eq("is_service", params.is_service);
@@ -148,11 +159,40 @@ export async function getProducts(params?: any): Promise<Product[]> {
       console.error("Error consultando catálogo:", error.message);
       return [];
     }
-
     return (data as Product[]) || [];
   } catch (error) {
     console.error("Error al obtener productos:", error);
     return [];
+  }
+}
+
+export async function deactivateProduct(id: string): Promise<MutationResult<Product>> {
+  try {
+    const user = await requireAuthenticatedUser();
+
+    // Guard RBAC: Desactivación o Baja Lógica restringida exclusivamente al rol 'admin'
+    if (user.role !== "admin") {
+      return {
+        success: false,
+        error: "ACCESO DENEGADO: Solo el perfil Administrador (admin) tiene permisos para desactivar o eliminar repuestos/servicios.",
+      };
+    }
+
+    const supabase = createClient();
+    const { data, error } = await supabase
+      .from("products")
+      .update({ is_active: false })
+      .eq("id", id)
+      .select()
+      .single();
+
+    if (error) return { success: false, error: error.message };
+    return { success: true, data: data as Product };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Error al desactivar ficha.",
+    };
   }
 }
 
@@ -181,6 +221,65 @@ export async function getCategories(isService: boolean = false): Promise<string[
   }
 }
 
+export async function updateCategoryName(
+  oldCategoryName: string,
+  newCategoryName: string
+): Promise<MutationResult<void>> {
+  try {
+    await requireAuthenticatedUser();
+    const supabase = createClient();
+    const oldName = oldCategoryName.trim();
+    const newName = newCategoryName.trim();
+
+    if (!newName) {
+      return { success: false, error: "El nuevo nombre de categoría no puede estar vacío." };
+    }
+
+    const { error } = await supabase
+      .from("products")
+      .update({ category: newName })
+      .eq("category", oldName);
+
+    if (error) {
+      return { success: false, error: error.message };
+    }
+
+    return { success: true };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Error al renombrar categoría.";
+    return { success: false, error: message };
+  }
+}
+
+export async function deleteCategoryAndReassign(
+  categoryToDelete: string,
+  targetCategory: string = "General"
+): Promise<MutationResult<void>> {
+  try {
+    await requireAuthenticatedUser();
+    const supabase = createClient();
+    const catToDelete = categoryToDelete.trim();
+
+    if (catToDelete === targetCategory) {
+      return { success: false, error: "No se puede eliminar la categoría por defecto." };
+    }
+
+    const { error } = await supabase
+      .from("products")
+      .update({ category: targetCategory })
+      .eq("category", catToDelete);
+
+    if (error) {
+      return { success: false, error: error.message };
+    }
+
+    return { success: true };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Error al reasignar productos de la categoría.";
+    return { success: false, error: message };
+  }
+}
+
 export async function bulkCreateProducts(productsList: CreateProductInput[]): Promise<MutationResult<number>> {
   try {
     const user = await requireAuthenticatedUser();
@@ -188,11 +287,10 @@ export async function bulkCreateProducts(productsList: CreateProductInput[]): Pr
 
     const formattedProducts = productsList.map((p) => {
       const isSrv = Boolean(p.is_service);
-
       const sku = String(p.sku || "").trim().toUpperCase();
       const name = String(p.name || "").trim();
       const brand = String(p.brand || "").trim();
-      
+
       let category = p.category ? String(p.category).trim() : "";
       if (!category) {
         category = isSrv ? "Mano de Obra" : "General";
@@ -235,6 +333,7 @@ export async function bulkCreateProducts(productsList: CreateProductInput[]): Pr
         stock,
         min_stock,
         is_service: isSrv,
+        is_active: true,
       };
     });
 
@@ -259,6 +358,7 @@ export async function bulkCreateProducts(productsList: CreateProductInput[]): Pr
           unit_cost: p.cost_price,
           reference_document: "CARGA_MASIVA",
           cashier_email: user.email,
+          user_id: user.id,
         }));
 
       if (initialTransactions.length > 0) {
@@ -278,7 +378,7 @@ export async function getProductKardex(productId: string): Promise<any[]> {
     const supabase = createClient();
     const { data, error } = await supabase
       .from("inventory_transactions")
-      .select("*")
+      .select("*, sales(id, reference_document, payment_method)")
       .eq("product_id", productId)
       .order("created_at", { ascending: false });
 

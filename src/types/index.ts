@@ -1,4 +1,13 @@
 // src/types/index.ts
+
+export type UserRole = 'admin' | 'manager';
+
+export interface UserProfile {
+  id: string;
+  email: string;
+  role: UserRole;
+}
+
 export type ProductCategory =
   | 'Lubricantes y Aceites'
   | 'Filtros'
@@ -52,10 +61,11 @@ export interface Product {
   category: ProductCategory | ServiceCategory | string;
   brand: string;
   price: number;
-  cost_price: number; // Campo para cálculo de COGS
+  cost_price: number;
   stock: number;
   min_stock: number;
   is_service?: boolean;
+  is_active?: boolean;
   created_at?: string;
 }
 
@@ -65,7 +75,7 @@ export interface CartItem {
   sku: string;
   name: string;
   price: number;
-  cost_price: number; // Snapshot del costo unitario congelado
+  cost_price: number;
   quantity: number;
   stock: number;
   is_service: boolean;
@@ -81,12 +91,48 @@ export type ExpenseCategory =
 
 export interface Expense {
   id: string;
+  cash_session_id?: string | null;
+  user_id?: string | null;
   category: ExpenseCategory | string;
   amount: number;
   description?: string | null;
   date: string;
   cashier_email: string;
   created_at?: string;
+}
+
+export interface CashSession {
+  id: string;
+  user_id?: string | null;
+  opened_at: string;
+  closed_at?: string | null;
+  monto_inicial: number;
+  monto_final_sistema: number;
+  monto_final_real: number;
+  diferencia: number;
+  status: "OPEN" | "CLOSED";
+  cashier_email: string;
+}
+
+export interface Sale {
+  id: string;
+  cash_session_id?: string | null;
+  user_id?: string | null;
+  reference_document: string;
+  payment_method: "Efectivo" | "Transferencia" | "Tarjeta";
+  total_amount: number;
+  cashier_email: string;
+  created_at: string;
+}
+
+export interface SaleItem {
+  id: string;
+  sale_id: string;
+  product_id: string;
+  quantity: number;
+  unit_price: number;
+  unit_cost: number;
+  created_at: string;
 }
 
 export interface AuditLog {

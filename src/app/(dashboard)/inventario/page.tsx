@@ -39,12 +39,7 @@ export default function InventarioPage() {
     loadCatalog();
   }, []);
 
-  /**
-   * Genera y descarga la plantilla oficial de migración en formato Excel (.xlsx) nativo con estilos corporativos.
-   * Modificado para inyectar estilos directamente celda por celda mediante xlsx-js-style.
-   */
   const handleDownloadTemplate = () => {
-    // 1. Datos base de la plantilla (Cabeceras y fila de ejemplo)
     const templateData = [
       [
         "sku", "name", "brand", "category", "price", 
@@ -55,15 +50,11 @@ export default function InventarioPage() {
         12990, 8500, 25, 5, "OEM-BS-1020", "7801234567890", false
       ]
     ];
-
     try {
-      // 2. Crear la hoja de trabajo a partir de los datos
       const worksheet = XLSX.utils.aoa_to_sheet(templateData);
-
-      // 3. Definir estilos profesionales de diseño corporativo
       const headerStyle = {
         font: { name: "Calibri", sz: 11, bold: true, color: { rgb: "FFFFFF" } },
-        fill: { fgColor: { rgb: "1F2937" } }, // Gris oscuro elegante (Tailwind zinc-800)
+        fill: { fgColor: { rgb: "1F2937" } },
         alignment: { horizontal: "center", vertical: "center" },
         border: {
           top: { style: "thin", color: { rgb: "4B5563" } },
@@ -72,7 +63,6 @@ export default function InventarioPage() {
           right: { style: "thin", color: { rgb: "4B5563" } }
         }
       };
-
       const sampleRowStyle = {
         font: { name: "Calibri", sz: 11 },
         alignment: { horizontal: "left", vertical: "center" },
@@ -84,42 +74,35 @@ export default function InventarioPage() {
         }
       };
 
-      // 4. Aplicar los estilos celda por celda recorriendo el rango de columnas (A1 hasta K2)
       const range = XLSX.utils.decode_range(worksheet["!ref"] || "A1:K2");
       for (let C = range.s.c; C <= range.e.c; ++C) {
-        // Aplicar estilo a la cabecera (Fila 0)
         const headerCellRef = XLSX.utils.encode_cell({ r: 0, c: C });
         if (worksheet[headerCellRef]) {
           worksheet[headerCellRef].s = headerStyle;
         }
-        
-        // Aplicar estilo suave a la fila de ejemplo (Fila 1)
         const dataCellRef = XLSX.utils.encode_cell({ r: 1, c: C });
         if (worksheet[dataCellRef]) {
           worksheet[dataCellRef].s = sampleRowStyle;
         }
       }
 
-      // 5. Configurar anchos de columna automáticos para que no queden textos cortados
       worksheet["!cols"] = [
-        { wch: 15 }, // sku
-        { wch: 30 }, // name
-        { wch: 15 }, // brand
-        { wch: 22 }, // category
-        { wch: 12 }, // price
-        { wch: 12 }, // cost_price
-        { wch: 10 }, // stock
-        { wch: 12 }, // min_stock
-        { wch: 20 }, // part_number_factory
-        { wch: 18 }, // barcode
-        { wch: 12 }  // is_service
+        { wch: 15 },
+        { wch: 30 },
+        { wch: 15 },
+        { wch: 22 },
+        { wch: 12 },
+        { wch: 12 },
+        { wch: 10 },
+        { wch: 12 },
+        { wch: 20 },
+        { wch: 18 },
+        { wch: 12 }
       ];
 
-      // 6. Crear libro, agregar la hoja estilizada y disparar la descarga
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, "Plantilla Migración");
       XLSX.writeFile(workbook, "plantilla_migracion_repuestos_tito.xlsx");
-
       toast({
         title: "Plantilla Estilizada Generada",
         description: "Se descargó el archivo Excel con diseño corporativo automático.",
@@ -260,6 +243,7 @@ export default function InventarioPage() {
             isLoading={isLoading}
             onSelectProduct={(p) => setSelectedProduct(p)}
             onEditProduct={(p) => setEditingProduct(p)}
+            onRefreshCatalog={loadCatalog}
           />
         </TabsContent>
         <TabsContent value="services">
@@ -268,6 +252,7 @@ export default function InventarioPage() {
             isLoading={isLoading}
             onEditService={(srv) => setEditingProduct(srv)}
             onSelectService={(srv) => setSelectedProduct(srv)}
+            onRefreshCatalog={loadCatalog}
           />
         </TabsContent>
       </Tabs>

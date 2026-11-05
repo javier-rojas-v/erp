@@ -1,9 +1,11 @@
 // src/app/(dashboard)/historial/page.tsx
+
 "use client";
 
 import { useState, useEffect } from "react";
-import { getActiveCashSession, closeCashSession, openCashSession, CashSession } from "@/lib/api/cash";
+import { getActiveCashSession, closeCashSession, openCashSession } from "@/lib/api/cash";
 import { getTodaySales } from "@/lib/api/transactions";
+import { CashSession, TodaySaleRow } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -23,7 +25,7 @@ import {
 
 export default function HistorialCajaPage() {
   const [activeSession, setActiveSession] = useState<CashSession | null>(null);
-  const [salesHistory, setSalesHistory] = useState<any[]>([]);
+  const [salesHistory, setSalesHistory] = useState<TodaySaleRow[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isClosingModalOpen, setIsClosingModalOpen] = useState(false);
@@ -82,10 +84,12 @@ export default function HistorialCajaPage() {
     setIsSubmitting(true);
     const res = await openCashSession(0);
     setIsSubmitting(false);
+
     if (!res.success) {
-      toast({ title: "Error", description: "No se pudo abrir la caja.", type: "error" });
+      toast({ title: "Error", description: res.error || "No se pudo abrir la caja.", type: "error" });
       return;
     }
+
     toast({ title: "Caja Abierta", description: "Turno iniciado correctamente.", type: "success" });
     setClosedSessionSummary(null);
     loadData();
@@ -94,25 +98,30 @@ export default function HistorialCajaPage() {
   const handleCloseShiftSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeSession) return;
+
     const realAmount = parseFloat(cashCounted);
     if (isNaN(realAmount) || realAmount < 0) {
       toast({ title: "Monto inválido", description: "Ingresa el conteo físico correcto.", type: "warning" });
       return;
     }
+
     setIsSubmitting(true);
     const diff = realAmount - totalEfectivo;
     const res = await closeCashSession(activeSession.id, totalEfectivo, realAmount);
     setIsSubmitting(false);
+
     if (!res.success) {
       toast({ title: "Error al cerrar", description: res.error, type: "error" });
       return;
     }
+
     setClosedSessionSummary({ monto_final_sistema: totalEfectivo, monto_final_real: realAmount, diferencia: diff });
     toast({ 
       title: "Caja Cerrada", 
       description: diff === 0 ? "Caja totalmente cuadrada." : `Cierre con descuadre ($${diff.toLocaleString("es-CL")}).`,
       type: diff === 0 ? "success" : "warning" 
     });
+
     setIsClosingModalOpen(false);
     setCashCounted("");
     loadData();
@@ -133,6 +142,7 @@ export default function HistorialCajaPage() {
             Auditoría de transacciones en mesón y arqueo de caja diario para control financiero.
           </p>
         </div>
+
         <div>
           {activeSession ? (
             <Button className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold" onClick={() => {
@@ -180,6 +190,7 @@ export default function HistorialCajaPage() {
             <p className="text-xs text-muted-foreground mt-0.5">Todas las formas de pago</p>
           </div>
         </div>
+
         <div className="flex flex-col justify-between p-5 border border-border rounded-xl bg-card text-card-foreground shadow-sm">
           <div className="flex items-center justify-between text-muted-foreground text-sm font-medium">
             <span>Efectivo (Caja)</span>
@@ -190,6 +201,7 @@ export default function HistorialCajaPage() {
             <p className="text-xs text-muted-foreground mt-0.5">Dinero físico esperado</p>
           </div>
         </div>
+
         <div className="flex flex-col justify-between p-5 border border-border rounded-xl bg-card text-card-foreground shadow-sm">
           <div className="flex items-center justify-between text-muted-foreground text-sm font-medium">
             <span>Transferencias</span>
@@ -200,6 +212,7 @@ export default function HistorialCajaPage() {
             <p className="text-xs text-muted-foreground mt-0.5">Validado por comprobante</p>
           </div>
         </div>
+
         <div className="flex flex-col justify-between p-5 border border-border rounded-xl bg-card text-card-foreground shadow-sm">
           <div className="flex items-center justify-between text-muted-foreground text-sm font-medium">
             <span>Tarjetas (POS)</span>
@@ -226,6 +239,7 @@ export default function HistorialCajaPage() {
             />
           </div>
         </div>
+
         <div className="rounded-xl border border-border bg-background/50 overflow-hidden">
           <Table>
             <TableHeader className="bg-muted/50">
@@ -260,16 +274,16 @@ export default function HistorialCajaPage() {
                     <TableCell className="text-xs text-muted-foreground">
                       <div className="flex items-center gap-1.5 font-mono">
                         <Calendar className="h-3.5 w-3.5 text-primary shrink-0" />
-                        <span>{formatDateCL(sale.created_at || sale.date)}</span>
+                        <span>{formatDateCL(sale.date)}</span>
                       </div>
                     </TableCell>
                     <TableCell>
-                      <span className="inline-flex items-center rounded-md bg-secondary px-2 py-1 text-xs font-medium text-secondary-foreground">
-                        {sale.paymentMethod}
+                      <span className="inline-flex items-center rounded-md bg-secondary px-2.5 py-1 text-xs font-semibold text-secondary-foreground border border-border">
+                        {sale.paymentMethod || "Efectivo"}
                       </span>
                     </TableCell>
                     <TableCell className="text-sm">{sale.cashier}</TableCell>
-                    <TableCell className="text-right font-bold tabular-nums">{sale.itemsCount} un.</TableCell>
+                    <TableCell className="text-right font-bold tabular-nums">{sale.itemsCount || 0} un.</TableCell>
                     <TableCell className="text-right font-semibold tabular-nums text-foreground">
                       ${sale.total.toLocaleString("es-CL")}
                     </TableCell>
@@ -290,7 +304,6 @@ export default function HistorialCajaPage() {
                 <h3 className="text-lg font-bold">Arqueo de Caja Diario</h3>
               </div>
             </div>
-
             <form onSubmit={handleCloseShiftSubmit} className="flex flex-col gap-4">
               <div className="flex flex-col gap-1.5">
                 <span className="text-xs font-medium text-muted-foreground">Resumen del Sistema:</span>

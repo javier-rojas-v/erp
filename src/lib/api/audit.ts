@@ -1,4 +1,5 @@
 // src/lib/api/audit.ts
+
 import { createClient } from "@/lib/supabase/client";
 import { AuditLog } from "@/types";
 
@@ -48,23 +49,23 @@ export async function getAuditLogs(limit: number = 100): Promise<AuditLog[]> {
           auditLogs.push({
             id: `open-${s.id}`,
             event_type: "CASH_OPEN",
-            description: `Apertura de turno de caja realizada con saldo inicial $${Number(s.monto_inicial || 0).toLocaleString("es-CL")}.`,
+            description: `Apertura de turno de caja realizada por [${s.cashier_email}] con saldo inicial $${Number(s.monto_inicial || 0).toLocaleString("es-CL")}.`,
             cashier_email: s.cashier_email,
-            metadata: { session_id: s.id, monto_inicial: s.monto_inicial },
+            metadata: { session_id: s.id, user_id: s.user_id, monto_inicial: s.monto_inicial },
             created_at: s.opened_at,
           });
         }
-
         if (s.closed_at) {
           const diff = Number(s.diferencia || 0);
           if (diff !== 0) {
             auditLogs.push({
               id: `disc-${s.id}`,
               event_type: "DISCREPANCY",
-              description: `DESCUADRE DE CAJA DETECTADO: Sistema $${Number(s.monto_final_sistema || 0).toLocaleString("es-CL")} vs Real $${Number(s.monto_final_real || 0).toLocaleString("es-CL")}. Diferencia: $${diff.toLocaleString("es-CL")}.`,
+              description: `DESCUADRE DE CAJA DETECTADO: Sistema $${Number(s.monto_final_sistema || 0).toLocaleString("es-CL")} vs Real $${Number(s.monto_final_real || 0).toLocaleString("es-CL")}. Diferencia: $${diff.toLocaleString("es-CL")}. Operador: ${s.cashier_email}`,
               cashier_email: s.cashier_email,
               metadata: {
                 session_id: s.id,
+                user_id: s.user_id,
                 monto_sistema: s.monto_final_sistema,
                 monto_real: s.monto_final_real,
                 diferencia: diff,
@@ -75,9 +76,9 @@ export async function getAuditLogs(limit: number = 100): Promise<AuditLog[]> {
             auditLogs.push({
               id: `close-${s.id}`,
               event_type: "CASH_CLOSE",
-              description: `Cierre de turno de caja completado sin diferencias. Total sistema: $${Number(s.monto_final_sistema || 0).toLocaleString("es-CL")}.`,
+              description: `Cierre de turno de caja completado sin diferencias. Total sistema: $${Number(s.monto_final_sistema || 0).toLocaleString("es-CL")}. Operador: ${s.cashier_email}`,
               cashier_email: s.cashier_email,
-              metadata: { session_id: s.id, monto_final: s.monto_final_real },
+              metadata: { session_id: s.id, user_id: s.user_id, monto_final: s.monto_final_real },
               created_at: s.closed_at,
             });
           }
@@ -93,9 +94,9 @@ export async function getAuditLogs(limit: number = 100): Promise<AuditLog[]> {
         auditLogs.push({
           id: `stock-${tx.id}`,
           event_type: "STOCK_ENTRY",
-          description: `Ingreso de stock (+${tx.quantity} un.) para "${prodName}" [${sku}]. Doc: ${doc}.`,
+          description: `Ingreso de stock (+${tx.quantity} un.) para "${prodName}" [${sku}]. Doc: ${doc}. Registrado por: ${tx.cashier_email}`,
           cashier_email: tx.cashier_email,
-          metadata: { transaction_id: tx.id, quantity: tx.quantity, document: doc },
+          metadata: { transaction_id: tx.id, user_id: tx.user_id, quantity: tx.quantity, document: doc },
           created_at: tx.created_at,
         });
       });

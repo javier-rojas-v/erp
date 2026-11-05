@@ -3,12 +3,15 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { getFinancialSummary, FinancialSummary, DailyTrendPoint } from "@/lib/api/finance";
-import { getExpenses } from "@/lib/api/expenses";
-import { Expense } from "@/types";
+import { getExpenses, deleteExpense } from "@/lib/api/expenses";
+import { createClient } from "@/lib/supabase/client";
+import { Expense, UserRole } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { toast } from "@/components/ui/toast";
 import { CreateExpenseModal } from "@/components/expenses/CreateExpenseModal";
+import { UpdateExpenseModal } from "@/components/expenses/UpdateExpenseModal";
 import {
   TrendingUp,
   TrendingDown,
@@ -22,6 +25,10 @@ import {
   Wallet,
   ArrowUpRight,
   BarChart3,
+  Edit3,
+  Trash2,
+  AlertTriangle,
+  Lock,
 } from "lucide-react";
 
 type TimePreset = "today" | "week" | "month" | "custom";
@@ -30,6 +37,7 @@ export default function FinanzasPage() {
   const [timePreset, setTimePreset] = useState<TimePreset>("month");
   const [customStartDate, setCustomStartDate] = useState<string>("");
   const [customEndDate, setCustomEndDate] = useState<string>("");
+  const [userRole, setUserRole] = useState<UserRole | null>(null);
   const [financialSummary, setFinancialSummary] = useState<FinancialSummary>({
     totalIncome: 0,
     cogs: 0,
@@ -45,8 +53,26 @@ export default function FinanzasPage() {
   const [expenseSearch, setExpenseSearch] = useState("");
   const [expenseCategoryFilter, setExpenseCategoryFilter] = useState("ALL");
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
+  const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
+  const [deletingExpense, setDeletingExpense] = useState<Expense | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
-  // Estandarización de límites de fecha en zona horaria America/Santiago
+  useEffect(() => {
+    const supabase = createClient();
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) {
+        supabase
+          .from("profiles")
+          .select("role")
+          .eq("id", user.id)
+          .maybeSingle()
+          .then(({ data }) => {
+            setUserRole((data?.role as UserRole) || "manager");
+          });
+      }
+    });
+  }, []);
+
   const { startDate, endDate } = useMemo(() => {
     const now = new Date();
     const formatter = new Intl.DateTimeFormat("en-US", {
@@ -65,12 +91,15 @@ export default function FinanzasPage() {
 
     if (timePreset === "today") {
       start = new Date(Date.UTC(year, month, day, 0, 0, 0, 0));
+      end = new Date(Date.UTC(year, month, day, 23, 59, 59, 999));
     } else if (timePreset === "week") {
       const dayOfWeek = now.getDay();
-      const diff = day - dayOfWeek + (dayOfWeek === 0 ? -6 : 1);
-      start = new Date(Date.UTC(year, month, diff, 0, 0, 0, 0));
+      const diff = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+      start = new Date(Date.UTC(year, month, day - diff, 0, 0, 0, 0));
+      end = new Date(Date.UTC(year, month, day, 23, 59, 59, 999));
     } else if (timePreset === "month") {
       start = new Date(Date.UTC(year, month, 1, 0, 0, 0, 0));
+      end = new Date(Date.UTC(year, month + 1, 0, 23, 59, 59, 999));
     } else if (timePreset === "custom" && customStartDate && customEndDate) {
       const [sY, sM, sD] = customStartDate.split("-").map(Number);
       const [eY, eM, eD] = customEndDate.split("-").map(Number);
@@ -102,6 +131,29 @@ export default function FinanzasPage() {
     loadFinancialData();
   }, [startDate, endDate]);
 
+  const handleConfirmDeleteExpense = async () => {
+    if (!deletingExpense) return;
+    if (userRole !== "admin") {
+      toast({
+        title: "Acceso Denegado",
+        description: "Solo el perfil Administrador (admin) tiene permisos para eliminar gastos operativos.",
+        type: "error",
+      });
+      setDeletingExpense(null);
+      return;
+    }
+    setIsDeleting(true);
+    const res = await deleteExpense(deletingExpense.id);
+    setIsDeleting(false);
+    setDeletingExpense(null);
+    if (!res.success) {
+      toast({ title: "Error al eliminar", description: res.error, type: "error" });
+      return;
+    }
+    toast({ title: "Gasto Eliminado", description: "El registro de egreso fue eliminado permanentemente.", type: "success" });
+    loadFinancialData();
+  };
+
   const filteredExpenses = useMemo(() => {
     return expenses.filter((exp) => {
       const q = expenseSearch.toLowerCase();
@@ -128,7 +180,8 @@ export default function FinanzasPage() {
     }
   };
 
-  const isPositiveNet = financialSummary.netProfit > 0;
+  const isPositiveNet = financialSummary.netProfit >= 0;
+  const isAdmin = userRole === "admin";
 
   return (
     <div className="flex flex-col gap-6">
@@ -183,7 +236,7 @@ export default function FinanzasPage() {
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
         <div className="flex flex-col justify-between p-5 border border-border rounded-xl bg-card text-card-foreground shadow-sm">
           <div className="flex items-center justify-between text-muted-foreground text-sm font-medium">
-            <span>Ingresos Totales ($I$)</span>
+            <span>Ingresos Totales (I)</span>
             <div className="h-8 w-8 rounded-lg bg-emerald-500/10 text-emerald-500 flex items-center justify-center">
               <DollarSign className="h-4 w-4" />
             </div>
@@ -219,7 +272,7 @@ export default function FinanzasPage() {
 
         <div className="flex flex-col justify-between p-5 border border-border rounded-xl bg-card text-card-foreground shadow-sm">
           <div className="flex items-center justify-between text-muted-foreground text-sm font-medium">
-            <span>Ganancia Bruta ($GB$)</span>
+            <span>Ganancia Bruta (GB)</span>
             <div className="h-8 w-8 rounded-lg bg-purple-500/10 text-purple-500 flex items-center justify-center">
               <TrendingUp className="h-4 w-4" />
             </div>
@@ -239,7 +292,7 @@ export default function FinanzasPage() {
 
         <div className="flex flex-col justify-between p-5 border border-border rounded-xl bg-card text-card-foreground shadow-sm relative overflow-hidden">
           <div className="flex items-center justify-between text-muted-foreground text-sm font-medium">
-            <span>Gastos Operativos ($G$)</span>
+            <span>Gastos Operativos (G)</span>
             <div className="h-8 w-8 rounded-lg bg-red-500/10 text-red-500 flex items-center justify-center">
               <TrendingDown className="h-4 w-4" />
             </div>
@@ -262,7 +315,7 @@ export default function FinanzasPage() {
           isPositiveNet ? "border-emerald-500/40 bg-emerald-500/5" : "border-red-500/40 bg-red-500/5"
         }`}>
           <div className="flex items-center justify-between text-muted-foreground text-sm font-medium">
-            <span>Ganancia Neta ($GN$)</span>
+            <span>Ganancia Neta (GN)</span>
             <div className={`h-8 w-8 rounded-lg flex items-center justify-center ${
               isPositiveNet ? "bg-emerald-500/20 text-emerald-400" : "bg-red-500/20 text-red-400"
             }`}>
@@ -293,16 +346,16 @@ export default function FinanzasPage() {
           </div>
           <div className="flex items-center gap-4 text-xs font-semibold">
             <span className="flex items-center gap-1.5 text-emerald-400">
-              <span className="h-2.5 w-2.5 rounded-full bg-emerald-500 inline-block" /> Ingresos ($I$)
+              <span className="h-2.5 w-2.5 rounded-full bg-emerald-500 inline-block" /> Ingresos (I)
             </span>
             <span className="flex items-center gap-1.5 text-blue-400">
-              <span className="h-2.5 w-2.5 rounded-full bg-blue-500 inline-block" /> COGS ($C$)
+              <span className="h-2.5 w-2.5 rounded-full bg-blue-500 inline-block" /> COGS (C)
             </span>
             <span className="flex items-center gap-1.5 text-red-400">
-              <span className="h-2.5 w-2.5 rounded-full bg-red-500 inline-block" /> Gastos ($G$)
+              <span className="h-2.5 w-2.5 rounded-full bg-red-500 inline-block" /> Gastos (G)
             </span>
             <span className="flex items-center gap-1.5 text-emerald-400">
-              <span className="h-2.5 w-2.5 rounded-full bg-emerald-500 inline-block" /> Utilidad Neta ($GN$)
+              <span className="h-2.5 w-2.5 rounded-full bg-emerald-500 inline-block" /> Utilidad Neta (GN)
             </span>
           </div>
         </div>
@@ -407,18 +460,19 @@ export default function FinanzasPage() {
                 <TableHead>Descripción / Concepto</TableHead>
                 <TableHead>Registrado Por</TableHead>
                 <TableHead className="text-right">Monto ($ CLP)</TableHead>
+                <TableHead className="text-center">Acciones</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? (
                 <TableRow className="border-border">
-                  <TableCell colSpan={5} className="h-32 text-center text-muted-foreground">
+                  <TableCell colSpan={6} className="h-32 text-center text-muted-foreground">
                     <Loader2 className="h-5 w-5 animate-spin mx-auto text-primary" />
                   </TableCell>
                 </TableRow>
               ) : filteredExpenses.length === 0 ? (
                 <TableRow className="border-border">
-                  <TableCell colSpan={5} className="h-32 text-center text-muted-foreground">
+                  <TableCell colSpan={6} className="h-32 text-center text-muted-foreground">
                     No se encontraron gastos registrados en este período.
                   </TableCell>
                 </TableRow>
@@ -445,6 +499,30 @@ export default function FinanzasPage() {
                     <TableCell className="text-right font-bold tabular-nums text-red-400 text-base">
                       -${exp.amount.toLocaleString("es-CL")}
                     </TableCell>
+                    <TableCell className="text-center">
+                      <div className="flex items-center justify-center gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon-xs"
+                          disabled={!isAdmin}
+                          onClick={() => isAdmin && setEditingExpense(exp)}
+                          className={!isAdmin ? "opacity-50 cursor-not-allowed hover:bg-transparent" : ""}
+                          title={isAdmin ? "Editar Gasto" : "Restringido: Requiere rol Administrador"}
+                        >
+                          {!isAdmin ? <Lock className="h-3.5 w-3.5 text-muted-foreground" /> : <Edit3 className="h-3.5 w-3.5 text-primary" />}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon-xs"
+                          disabled={!isAdmin}
+                          className={isAdmin ? "text-destructive hover:bg-destructive/10" : "opacity-50 cursor-not-allowed hover:bg-transparent"}
+                          onClick={() => isAdmin && setDeletingExpense(exp)}
+                          title={isAdmin ? "Eliminar Gasto" : "Restringido: Requiere rol Administrador"}
+                        >
+                          {!isAdmin ? <Lock className="h-3.5 w-3.5 text-muted-foreground" /> : <Trash2 className="h-3.5 w-3.5" />}
+                        </Button>
+                      </div>
+                    </TableCell>
                   </TableRow>
                 ))
               )}
@@ -458,6 +536,36 @@ export default function FinanzasPage() {
         onClose={() => setIsExpenseModalOpen(false)}
         onSuccess={loadFinancialData}
       />
+      <UpdateExpenseModal
+        expense={editingExpense}
+        isOpen={Boolean(editingExpense)}
+        onClose={() => setEditingExpense(null)}
+        onSuccess={loadFinancialData}
+      />
+      {deletingExpense && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4">
+          <div className="bg-card border border-border rounded-xl p-6 max-w-sm w-full shadow-2xl flex flex-col gap-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-red-500/10 text-red-500">
+                <AlertTriangle className="h-5 w-5" />
+              </div>
+              <h3 className="text-lg font-bold">¿Eliminar Gasto Operativo?</h3>
+            </div>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              Esta acción eliminará permanentemente el registro por <strong>${deletingExpense.amount.toLocaleString("es-CL")}</strong> ({deletingExpense.category}).
+            </p>
+            <div className="flex justify-end gap-2 pt-3 border-t border-border">
+              <Button variant="ghost" size="sm" onClick={() => setDeletingExpense(null)}>
+                Cancelar
+              </Button>
+              <Button variant="destructive" size="sm" disabled={isDeleting} onClick={handleConfirmDeleteExpense}>
+                {isDeleting ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : null}
+                Eliminar Permanentemente
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

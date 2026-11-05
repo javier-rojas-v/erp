@@ -1,18 +1,8 @@
-// lib/api/cash.ts
+// src/lib/api/cash.ts
+
 import { createClient } from "@/lib/supabase/client";
 import { requireAuthenticatedUser } from "@/lib/api/auth";
-
-export interface CashSession {
-  id: string;
-  opened_at: string;
-  closed_at?: string | null;
-  monto_inicial: number;
-  monto_final_sistema: number;
-  monto_final_real: number;
-  diferencia: number;
-  status: "OPEN" | "CLOSED";
-  cashier_email: string;
-}
+import { CashSession } from "@/types";
 
 export async function getActiveCashSession(): Promise<CashSession | null> {
   try {
@@ -56,6 +46,7 @@ export async function closeCashSession(
     if (error) {
       return { success: false, error: error.message };
     }
+
     return { success: true };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Error al cerrar la sesión de caja.";
@@ -63,7 +54,9 @@ export async function closeCashSession(
   }
 }
 
-export async function openCashSession(montoInicial: number = 0): Promise<{ success: boolean; data?: CashSession; error?: string }> {
+export async function openCashSession(
+  montoInicial: number = 0
+): Promise<{ success: boolean; data?: CashSession; error?: string }> {
   try {
     const user = await requireAuthenticatedUser();
     const supabase = createClient();
@@ -79,6 +72,7 @@ export async function openCashSession(montoInicial: number = 0): Promise<{ succe
           diferencia: 0,
           status: "OPEN",
           cashier_email: user.email,
+          user_id: user.id,
         },
       ])
       .select()
@@ -87,6 +81,7 @@ export async function openCashSession(montoInicial: number = 0): Promise<{ succe
     if (error || !data) {
       return { success: false, error: error?.message || "No se pudo abrir la caja." };
     }
+
     return { success: true, data: data as CashSession };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Error iniciando sesión de caja.";
