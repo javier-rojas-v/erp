@@ -2,13 +2,13 @@
 import { createClient } from "@/lib/supabase/client";
 
 export interface FinancialSummary {
-  totalIncome: number;      // Ingresos Totales (I)
-  cogs: number;             // Costo de Ventas (COGS)
-  grossProfit: number;      // Ganancia Bruta (GB = I - COGS)
-  grossMarginPct: number;   // Margen Bruto %
-  totalExpenses: number;    // Gastos Operativos (G)
-  netProfit: number;        // Ganancia Neta Operativa (GN = GB - G)
-  netMarginPct: number;     // Margen Neto %
+  totalIncome: number;
+  cogs: number;
+  grossProfit: number;
+  grossMarginPct: number;
+  totalExpenses: number;
+  netProfit: number;
+  netMarginPct: number;
 }
 
 export interface DailyTrendPoint {
@@ -20,7 +20,61 @@ export interface DailyTrendPoint {
   netProfit: number;
 }
 
-export async function getFinancialSummary(startDate: Date, endDate: Date): Promise<{
+export function getChileDateRange(
+  preset: "today" | "week" | "month" | "custom",
+  customStart?: string,
+  customEnd?: string
+): { startDate: Date; endDate: Date } {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth();
+  const day = now.getDate();
+
+  if (preset === "today") {
+    return {
+      startDate: new Date(year, month, day, 0, 0, 0, 0),
+      endDate: new Date(year, month, day, 23, 59, 59, 999),
+    };
+  }
+
+  if (preset === "week") {
+    const dayOfWeek = now.getDay();
+    const diffToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+    const monday = new Date(year, month, day - diffToMonday, 0, 0, 0, 0);
+    return {
+      startDate: monday,
+      endDate: new Date(year, month, day, 23, 59, 59, 999),
+    };
+  }
+
+  if (preset === "month") {
+    return {
+      startDate: new Date(year, month, 1, 0, 0, 0, 0),
+      endDate: new Date(year, month + 1, 0, 23, 59, 59, 999),
+    };
+  }
+
+  if (preset === "custom" && customStart && customEnd) {
+    const [sY, sM, sD] = customStart.split("-").map(Number);
+    const [eY, eM, eD] = customEnd.split("-").map(Number);
+    if (sY && sM && sD && eY && eM && eD) {
+      return {
+        startDate: new Date(sY, sM - 1, sD, 0, 0, 0, 0),
+        endDate: new Date(eY, eM - 1, eD, 23, 59, 59, 999),
+      };
+    }
+  }
+
+  return {
+    startDate: new Date(year, month, 1, 0, 0, 0, 0),
+    endDate: new Date(year, month + 1, 0, 23, 59, 59, 999),
+  };
+}
+
+export async function getFinancialSummary(
+  startDate: Date,
+  endDate: Date
+): Promise<{
   summary: FinancialSummary;
   dailyTrends: DailyTrendPoint[];
 }> {
@@ -39,141 +93,97 @@ export async function getFinancialSummary(startDate: Date, endDate: Date): Promi
     const startIso = startDate.toISOString();
     const endIso = endDate.toISOString();
 
-    // 1. Obtención desacoplada de ventas en el período
-    let { data: salesData, error: salesErr } = await supabase
+    // 1. Consulta desacoplada de ventas
+    const { data: salesData } = await supabase
       .from("sales")
-      .select("id, created_at, total_amount, cashier_email, payment_method, reference_document")
+      .select("id, created_at, total_amount")
       .gte("created_at", startIso)
       .lte("created_at", endIso)
       .order("created_at", { ascending: true });
 
-    if (salesErr || !salesData) {
-      console.warn("Fallo al obtener ventas por rango de fechas en BI:", salesErr?.message);
-      const fallback = await supabase
-        .from("sales")
-        .select("id, created_at, total_amount, cashier_email, payment_method, reference_document")
-        .order("created_at", { ascending: true });
-      salesData = fallback.data || [];
-    }
-
     const sales = salesData || [];
-    const saleIds = sales.map((s: any) => s.id).filter(Boolean);
+    const saleIds = sales.map((s) => s.id);
 
-    // 2. Obtención de ítems de ventas para cálculo de COGS
-    const saleItemsMap = new Map<string, Array<{ quantity: number; unit_price: number; unit_cost: number; product_id: string }>>();
+    // 2. Consulta de ítems de ventas por ID
+    let itemsMap = new Map<string, Array<{ quantity: number; unit_price: number; unit_cost: number; product_id: string }>>();
     if (saleIds.length > 0) {
-      const { data: itemsData, error: itemsErr } = await supabase
+      const { data: itemsData } = await supabase
         .from("sale_items")
         .select("sale_id, product_id, quantity, unit_price, unit_cost")
         .in("sale_id", saleIds);
 
-      if (!itemsErr && itemsData) {
-        itemsData.forEach((item: any) => {
-          const list = saleItemsMap.get(item.sale_id) || [];
+      if (itemsData) {
+        itemsData.forEach((item) => {
+          const list = itemsMap.get(item.sale_id) || [];
           list.push({
             quantity: Number(item.quantity) || 0,
             unit_price: Number(item.unit_price) || 0,
             unit_cost: Number(item.unit_cost) || 0,
             product_id: item.product_id,
           });
-          saleItemsMap.set(item.sale_id, list);
+          itemsMap.set(item.sale_id, list);
         });
       }
     }
 
-    // 3. Obtención de gastos operativos
-    let { data: expData, error: expErr } = await supabase
+    // 3. Consulta de gastos operativos
+    const { data: expData } = await supabase
       .from("expenses")
-      .select("id, category, amount, description, date, cashier_email")
+      .select("id, amount, date, created_at")
       .gte("date", startIso)
       .lte("date", endIso)
       .order("date", { ascending: true });
 
-    if (expErr || !expData) {
-      console.warn("Fallo al obtener gastos por rango de fechas:", expErr?.message);
-      const fallbackExp = await supabase
-        .from("expenses")
-        .select("id, category, amount, description, date, cashier_email")
-        .order("date", { ascending: true });
-      expData = fallbackExp.data || [];
-    }
-
     const expensesList = expData || [];
 
-    // 4. Catálogo de productos para verificación de servicio y costo base
-    const { data: prodsData } = await supabase
-      .from("products")
-      .select("id, is_service, cost_price");
+    // Mapas de procesamiento diario
+    const dailyMap: Record<string, { income: number; cogs: number; expenses: number }> = {};
 
-    const productMap = new Map<string, { is_service: boolean; cost_price: number }>();
-    if (prodsData) {
-      prodsData.forEach((p: any) => {
-        productMap.set(p.id, {
-          is_service: Boolean(p.is_service),
-          cost_price: Number(p.cost_price) || 0,
-        });
-      });
-    }
+    const getDayKey = (dateStr: string): string => {
+      const d = new Date(dateStr);
+      const day = String(d.getDate()).padStart(2, "0");
+      const month = String(d.getMonth() + 1).padStart(2, "0");
+      const year = d.getFullYear();
+      return `${day}/${month}/${year}`;
+    };
 
     let totalIncome = 0;
     let totalCogs = 0;
-    const dailyMap: Record<string, { income: number; cogs: number; expenses: number }> = {};
 
-    const getDayKey = (dateStr: string) => {
-      try {
-        const d = new Date(dateStr);
-        const yearStr = new Intl.DateTimeFormat("en-US", { timeZone: "America/Santiago", year: "numeric" }).format(d);
-        const monthStr = new Intl.DateTimeFormat("en-US", { timeZone: "America/Santiago", month: "2-digit" }).format(d);
-        const dayStr = new Intl.DateTimeFormat("en-US", { timeZone: "America/Santiago", day: "2-digit" }).format(d);
-        return `${dayStr}/${monthStr}/${yearStr}`;
-      } catch {
-        return dateStr.slice(0, 10);
+    sales.forEach((sale) => {
+      const key = getDayKey(sale.created_at);
+      if (!dailyMap[key]) {
+        dailyMap[key] = { income: 0, cogs: 0, expenses: 0 };
       }
-    };
 
-    if (sales.length > 0) {
-      sales.forEach((sale: any) => {
-        const key = getDayKey(sale.created_at);
-        if (!dailyMap[key]) {
-          dailyMap[key] = { income: 0, cogs: 0, expenses: 0 };
-        }
+      const items = itemsMap.get(sale.id) || [];
+      let itemsSum = 0;
+      let cogsSum = 0;
 
-        const saleTotal = Number(sale.total_amount) || 0;
-        totalIncome += saleTotal;
-        dailyMap[key].income += saleTotal;
-
-        const items = saleItemsMap.get(sale.id);
-        if (items && items.length > 0) {
-          items.forEach((item) => {
-            const qty = item.quantity;
-            const prodInfo = item.product_id ? productMap.get(item.product_id) : undefined;
-            const isService = prodInfo ? prodInfo.is_service : false;
-
-            let unitCost = 0;
-            if (!isService) {
-              unitCost = item.unit_cost > 0 ? item.unit_cost : (prodInfo?.cost_price || 0);
-            }
-
-            const itemCogs = qty * unitCost;
-            totalCogs += itemCogs;
-            dailyMap[key].cogs += itemCogs;
-          });
-        }
+      items.forEach((item) => {
+        itemsSum += item.quantity * item.unit_price;
+        cogsSum += item.quantity * item.unit_cost;
       });
-    }
+
+      const headerAmount = Number(sale.total_amount) || 0;
+      const finalSaleIncome = headerAmount > 0 ? headerAmount : itemsSum;
+
+      totalIncome += finalSaleIncome;
+      totalCogs += cogsSum;
+      dailyMap[key].income += finalSaleIncome;
+      dailyMap[key].cogs += cogsSum;
+    });
 
     let totalExpenses = 0;
-    if (expensesList.length > 0) {
-      expensesList.forEach((exp: any) => {
-        const amt = Number(exp.amount) || 0;
-        totalExpenses += amt;
-        const key = getDayKey(exp.date || exp.created_at);
-        if (!dailyMap[key]) {
-          dailyMap[key] = { income: 0, cogs: 0, expenses: 0 };
-        }
-        dailyMap[key].expenses += amt;
-      });
-    }
+    expensesList.forEach((exp) => {
+      const amt = Number(exp.amount) || 0;
+      totalExpenses += amt;
+      const key = getDayKey(exp.date || exp.created_at);
+      if (!dailyMap[key]) {
+        dailyMap[key] = { income: 0, cogs: 0, expenses: 0 };
+      }
+      dailyMap[key].expenses += amt;
+    });
 
     const grossProfit = totalIncome - totalCogs;
     const grossMarginPct = totalIncome > 0 ? (grossProfit / totalIncome) * 100 : 0;
@@ -182,24 +192,19 @@ export async function getFinancialSummary(startDate: Date, endDate: Date): Promi
 
     const dailyTrends: DailyTrendPoint[] = Object.keys(dailyMap)
       .sort((a, b) => {
-        const cleanA = a.replace(/[^\d/]/g, "");
-        const cleanB = b.replace(/[^\d/]/g, "");
-        const partsA = cleanA.split("/").map(Number);
-        const partsB = cleanB.split("/").map(Number);
-        const dateA = new Date(partsA[2] || 2026, (partsA[1] || 1) - 1, partsA[0] || 1).getTime();
-        const dateB = new Date(partsB[2] || 2026, (partsB[1] || 1) - 1, partsB[0] || 1).getTime();
-        return dateA - dateB;
+        const [dA, mA, yA] = a.split("/").map(Number);
+        const [dB, mB, yB] = b.split("/").map(Number);
+        return new Date(yA, mA - 1, dA).getTime() - new Date(yB, mB - 1, dB).getTime();
       })
       .map((key) => {
         const item = dailyMap[key];
-        const net = item.income - item.cogs - item.expenses;
         return {
           date: key,
           formattedDate: key.slice(0, 5),
           income: item.income,
           cogs: item.cogs,
           expenses: item.expenses,
-          netProfit: net,
+          netProfit: item.income - item.cogs - item.expenses,
         };
       });
 
@@ -216,7 +221,7 @@ export async function getFinancialSummary(startDate: Date, endDate: Date): Promi
       dailyTrends,
     };
   } catch (error) {
-    console.error("Error al generar resumen financiero:", error);
+    console.error("Error crítico calculando resumen financiero:", error);
     return { summary: defaultSummary, dailyTrends: [] };
   }
 }

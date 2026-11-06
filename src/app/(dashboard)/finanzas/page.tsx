@@ -1,8 +1,13 @@
 // src/app/(dashboard)/finanzas/page.tsx
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
-import { getFinancialSummary, FinancialSummary, DailyTrendPoint } from "@/lib/api/finance";
+import { useState, useEffect, useMemo, ChangeEvent } from "react";
+import {
+  getFinancialSummary,
+  getChileDateRange,
+  FinancialSummary,
+  DailyTrendPoint,
+} from "@/lib/api/finance";
 import { getExpenses, deleteExpense } from "@/lib/api/expenses";
 import { createClient } from "@/lib/supabase/client";
 import { Expense, UserRole } from "@/types";
@@ -38,6 +43,7 @@ export default function FinanzasPage() {
   const [customStartDate, setCustomStartDate] = useState<string>("");
   const [customEndDate, setCustomEndDate] = useState<string>("");
   const [userRole, setUserRole] = useState<UserRole | null>(null);
+
   const [financialSummary, setFinancialSummary] = useState<FinancialSummary>({
     totalIncome: 0,
     cogs: 0,
@@ -47,11 +53,14 @@ export default function FinanzasPage() {
     netProfit: 0,
     netMarginPct: 0,
   });
+
   const [dailyTrends, setDailyTrends] = useState<DailyTrendPoint[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+
   const [expenseSearch, setExpenseSearch] = useState("");
   const [expenseCategoryFilter, setExpenseCategoryFilter] = useState("ALL");
+
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
   const [deletingExpense, setDeletingExpense] = useState<Expense | null>(null);
@@ -74,40 +83,7 @@ export default function FinanzasPage() {
   }, []);
 
   const { startDate, endDate } = useMemo(() => {
-    const now = new Date();
-    const formatter = new Intl.DateTimeFormat("en-US", {
-      timeZone: "America/Santiago",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    });
-    const parts = formatter.formatToParts(now);
-    const year = parseInt(parts.find((p) => p.type === "year")!.value, 10);
-    const month = parseInt(parts.find((p) => p.type === "month")!.value, 10) - 1;
-    const day = parseInt(parts.find((p) => p.type === "day")!.value, 10);
-
-    let start = new Date(Date.UTC(year, month, day, 0, 0, 0, 0));
-    let end = new Date(Date.UTC(year, month, day, 23, 59, 59, 999));
-
-    if (timePreset === "today") {
-      start = new Date(Date.UTC(year, month, day, 0, 0, 0, 0));
-      end = new Date(Date.UTC(year, month, day, 23, 59, 59, 999));
-    } else if (timePreset === "week") {
-      const dayOfWeek = now.getDay();
-      const diff = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
-      start = new Date(Date.UTC(year, month, day - diff, 0, 0, 0, 0));
-      end = new Date(Date.UTC(year, month, day, 23, 59, 59, 999));
-    } else if (timePreset === "month") {
-      start = new Date(Date.UTC(year, month, 1, 0, 0, 0, 0));
-      end = new Date(Date.UTC(year, month + 1, 0, 23, 59, 59, 999));
-    } else if (timePreset === "custom" && customStartDate && customEndDate) {
-      const [sY, sM, sD] = customStartDate.split("-").map(Number);
-      const [eY, eM, eD] = customEndDate.split("-").map(Number);
-      start = new Date(Date.UTC(sY, sM - 1, sD, 0, 0, 0, 0));
-      end = new Date(Date.UTC(eY, eM - 1, eD, 23, 59, 59, 999));
-    }
-
-    return { startDate: start, endDate: end };
+    return getChileDateRange(timePreset, customStartDate, customEndDate);
   }, [timePreset, customStartDate, customEndDate]);
 
   const loadFinancialData = async () => {
@@ -121,7 +97,7 @@ export default function FinanzasPage() {
       setDailyTrends(finRes.dailyTrends);
       setExpenses(expRes);
     } catch (error) {
-      console.error("Error cargando módulo financiero BI:", error);
+      console.error("Error al cargar módulo de finanzas BI:", error);
     } finally {
       setIsLoading(false);
     }
@@ -130,6 +106,26 @@ export default function FinanzasPage() {
   useEffect(() => {
     loadFinancialData();
   }, [startDate, endDate]);
+
+  const handleTimePresetChange = (preset: TimePreset) => {
+    setTimePreset(preset);
+  };
+
+  const handleCustomStartDateChange = (e: ChangeEvent<HTMLInputElement>) => {
+    setCustomStartDate(e.target.value);
+  };
+
+  const handleCustomEndDateChange = (e: ChangeEvent<HTMLInputElement>) => {
+    setCustomEndDate(e.target.value);
+  };
+
+  const handleExpenseSearchChange = (e: ChangeEvent<HTMLInputElement>) => {
+    setExpenseSearch(e.target.value);
+  };
+
+  const handleCategoryFilterChange = (e: ChangeEvent<HTMLSelectElement>) => {
+    setExpenseCategoryFilter(e.target.value);
+  };
 
   const handleConfirmDeleteExpense = async () => {
     if (!deletingExpense) return;
@@ -142,15 +138,22 @@ export default function FinanzasPage() {
       setDeletingExpense(null);
       return;
     }
+
     setIsDeleting(true);
     const res = await deleteExpense(deletingExpense.id);
     setIsDeleting(false);
     setDeletingExpense(null);
+
     if (!res.success) {
       toast({ title: "Error al eliminar", description: res.error, type: "error" });
       return;
     }
-    toast({ title: "Gasto Eliminado", description: "El registro de egreso fue eliminado permanentemente.", type: "success" });
+
+    toast({
+      title: "Gasto Eliminado",
+      description: "El registro de egreso fue eliminado permanentemente.",
+      type: "success",
+    });
     loadFinancialData();
   };
 
@@ -203,7 +206,7 @@ export default function FinanzasPage() {
           ).map((preset) => (
             <button
               key={preset.id}
-              onClick={() => setTimePreset(preset.id)}
+              onClick={() => handleTimePresetChange(preset.id)}
               className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                 timePreset === preset.id
                   ? "bg-primary text-primary-foreground shadow-xs"
@@ -218,14 +221,14 @@ export default function FinanzasPage() {
               <Input
                 type="date"
                 value={customStartDate}
-                onChange={(e) => setCustomStartDate(e.target.value)}
+                onChange={handleCustomStartDateChange}
                 className="h-8 text-xs bg-background"
               />
               <span className="text-xs text-muted-foreground">a</span>
               <Input
                 type="date"
                 value={customEndDate}
-                onChange={(e) => setCustomEndDate(e.target.value)}
+                onChange={handleCustomEndDateChange}
                 className="h-8 text-xs bg-background"
               />
             </div>
@@ -311,26 +314,36 @@ export default function FinanzasPage() {
           </div>
         </div>
 
-        <div className={`flex flex-col justify-between p-5 border rounded-xl bg-card text-card-foreground shadow-sm ${
-          isPositiveNet ? "border-emerald-500/40 bg-emerald-500/5" : "border-red-500/40 bg-red-500/5"
-        }`}>
+        <div
+          className={`flex flex-col justify-between p-5 border rounded-xl bg-card text-card-foreground shadow-sm ${
+            isPositiveNet ? "border-emerald-500/40 bg-emerald-500/5" : "border-red-500/40 bg-red-500/5"
+          }`}
+        >
           <div className="flex items-center justify-between text-muted-foreground text-sm font-medium">
             <span>Ganancia Neta (GN)</span>
-            <div className={`h-8 w-8 rounded-lg flex items-center justify-center ${
-              isPositiveNet ? "bg-emerald-500/20 text-emerald-400" : "bg-red-500/20 text-red-400"
-            }`}>
+            <div
+              className={`h-8 w-8 rounded-lg flex items-center justify-center ${
+                isPositiveNet ? "bg-emerald-500/20 text-emerald-400" : "bg-red-500/20 text-red-400"
+              }`}
+            >
               <Wallet className="h-4 w-4" />
             </div>
           </div>
           <div className="mt-4">
-            <div className={`text-2xl font-black tabular-nums ${
-              isPositiveNet ? "text-emerald-400" : "text-red-400"
-            }`}>
+            <div
+              className={`text-2xl font-black tabular-nums ${
+                isPositiveNet ? "text-emerald-400" : "text-red-400"
+              }`}
+            >
               {isLoading ? "..." : `$${financialSummary.netProfit.toLocaleString("es-CL")}`}
             </div>
             <p className="text-xs text-muted-foreground mt-1 flex items-center justify-between">
               <span>Margen Neto P&L:</span>
-              <span className={`font-mono font-bold ${isPositiveNet ? "text-emerald-400" : "text-red-400"}`}>
+              <span
+                className={`font-mono font-bold ${
+                  isPositiveNet ? "text-emerald-400" : "text-red-400"
+                }`}
+              >
                 {financialSummary.netMarginPct.toFixed(1)}%
               </span>
             </p>
@@ -342,7 +355,9 @@ export default function FinanzasPage() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <BarChart3 className="h-5 w-5 text-primary" />
-            <h2 className="text-lg font-semibold tracking-tight">Comportamiento Financiero Diario (Hora Chile)</h2>
+            <h2 className="text-lg font-semibold tracking-tight">
+              Comportamiento Financiero Diario (Hora Chile)
+            </h2>
           </div>
           <div className="flex items-center gap-4 text-xs font-semibold">
             <span className="flex items-center gap-1.5 text-emerald-400">
@@ -359,7 +374,6 @@ export default function FinanzasPage() {
             </span>
           </div>
         </div>
-
         {isLoading ? (
           <div className="h-44 flex items-center justify-center text-xs text-muted-foreground">
             <Loader2 className="h-5 w-5 animate-spin mr-2 text-primary" /> Cargando tendencias...
@@ -425,12 +439,12 @@ export default function FinanzasPage() {
                 placeholder="Buscar gasto o correo..."
                 className="pl-9 h-9 bg-background border-border text-xs w-48 sm:w-64"
                 value={expenseSearch}
-                onChange={(e) => setExpenseSearch(e.target.value)}
+                onChange={handleExpenseSearchChange}
               />
             </div>
             <select
               value={expenseCategoryFilter}
-              onChange={(e) => setExpenseCategoryFilter(e.target.value)}
+              onChange={handleCategoryFilterChange}
               className="h-9 bg-card border border-border rounded-lg text-xs font-semibold px-2 text-foreground outline-hidden cursor-pointer"
             >
               <option value="ALL">Todas las Categorías</option>
@@ -542,6 +556,7 @@ export default function FinanzasPage() {
         onClose={() => setEditingExpense(null)}
         onSuccess={loadFinancialData}
       />
+
       {deletingExpense && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4">
           <div className="bg-card border border-border rounded-xl p-6 max-w-sm w-full shadow-2xl flex flex-col gap-4">
