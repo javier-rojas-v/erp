@@ -3,11 +3,15 @@ import { Topbar } from "@/components/layout/topbar";
 import { requireUser } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 
-export default async function DashboardLayout({
+export default function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  return <Suspense fallback={null}><AuthenticatedDashboard>{children}</AuthenticatedDashboard></Suspense>;
+}
+
+async function AuthenticatedDashboard({ children }: { children: React.ReactNode }) {
   try {
     await requireUser();
   } catch {
@@ -26,3 +30,4 @@ export default async function DashboardLayout({
     </div>
   );
 }
+import { Suspense } from "react";

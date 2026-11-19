@@ -1,5 +1,8 @@
+import "server-only";
+
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import type { Database, UserRole } from "@/types";
 
 export async function createClient() {
   const cookieStore = await cookies();
@@ -10,7 +13,7 @@ export async function createClient() {
     throw new Error("Supabase no está configurado. Define NEXT_PUBLIC_SUPABASE_URL y NEXT_PUBLIC_SUPABASE_ANON_KEY.");
   }
 
-  return createServerClient(
+  return createServerClient<Database>(
     supabaseUrl,
     supabaseKey,
     {
@@ -37,5 +40,17 @@ export async function requireUser() {
   const { data: { user }, error } = await supabase.auth.getUser();
 
   if (error || !user) throw new Error("UNAUTHORIZED");
-  return { supabase, user };
+
+  const { data: profile, error: profileError } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  if (profileError || (profile?.role !== "admin" && profile?.role !== "manager")) {
+    throw new Error("FORBIDDEN");
+  }
+
+  const role: UserRole = profile.role;
+  return { supabase, user, role };
 }
