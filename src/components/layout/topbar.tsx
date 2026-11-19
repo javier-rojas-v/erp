@@ -1,4 +1,5 @@
-import { ShieldCheck, Bell } from "lucide-react";
+// src/components/layout/topbar.tsx
+import { Bell, ShieldCheck, UserCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { logout } from "@/app/(dashboard)/actions";
 import { createClient } from "@/lib/supabase/server";
@@ -6,20 +7,40 @@ import { createClient } from "@/lib/supabase/server";
 export async function Topbar() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
+
+  let roleLabel = "Manager (Fabián)";
+  let roleBadgeClass = "bg-blue-500/10 text-blue-400 border-blue-500/20";
+  let RoleIcon = UserCheck;
+
+  if (user) {
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    const role = profile?.role || "manager";
+    if (role === "admin") {
+      roleLabel = "Superadmin (Javier)";
+      roleBadgeClass = "bg-purple-500/10 text-purple-400 border-purple-500/20";
+      RoleIcon = ShieldCheck;
+    } else {
+      roleLabel = "Manager (Fabián)";
+      roleBadgeClass = "bg-amber-500/10 text-amber-400 border-amber-500/20";
+      RoleIcon = UserCheck;
+    }
+  }
+
   const email = user?.email ?? "Usuario autenticado";
   const initials = email.slice(0, 2).toUpperCase();
 
   return (
     <header className="h-16 border-b border-border bg-background/50 backdrop-blur-sm px-6 flex items-center justify-between sticky top-0 z-30">
-      {/* Indicador de Sucursal y Estado */}
       <div className="flex items-center gap-3">
-        <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
-          <ShieldCheck className="h-3.5 w-3.5" />
-          Sistema Seguro (Local Principal)
+        <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border ${roleBadgeClass}`}>
+          <RoleIcon className="h-3.5 w-3.5" /> Rol: {roleLabel}
         </span>
       </div>
-
-      {/* Perfil y Accesos de Usuario */}
       <div className="flex items-center gap-3">
         <Button variant="ghost" size="icon" className="relative text-muted-foreground hover:text-foreground">
           <Bell className="h-4 w-4" />

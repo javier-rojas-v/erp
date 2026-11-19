@@ -1,6 +1,10 @@
+// src/app/(dashboard)/entradas/page.tsx
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { getProducts } from "@/lib/api/products";
+import { registerStockEntry, getAllInventoryTransactions } from "@/lib/api/transactions";
+import { Product } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,189 +17,152 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { toast } from "@/components/ui/toast";
-import { Truck, Plus, FileText, ArrowUpRight } from "lucide-react";
-
-interface ProductCatalogOption {
-  variant_id: string;
-  sku: string;
-  name: string;
-  current_price: number;
-}
-
-const INITIAL_CATALOG: ProductCatalogOption[] = [
-  { variant_id: "uuid-v1", sku: "OIL-10W40", name: "Aceite Semi-Sintético 10W40 4L", current_price: 28000 },
-  { variant_id: "uuid-v2", sku: "FLT-OIL01", name: "Filtro de Aceite Blindado", current_price: 8500 },
-  { variant_id: "uuid-v3", sku: "BRK-PAD02", name: "Pastillas de Freno Delanteras", current_price: 32000 },
-];
-
-interface StockEntryTransaction {
-  id: string;              // ID Recepción (ej. ENT-501)
-  invoiceNumber: string;   // reference_document (Nº Factura/Boleta)
-  date: string;            // Fecha de transacción
-  sku: string;             // SKU del producto
-  productName: string;     // Nombre del repuesto
-  quantity: number;        // Cantidad Ingresada
-  salePriceUpdated: number;// Precio de venta público asignado
-}
+import { Truck, Plus, FileText, Loader2 } from "lucide-react";
 
 export default function EntradasPage() {
-  const [catalog, setCatalog] = useState<ProductCatalogOption[]>(INITIAL_CATALOG);
-  const [entries, setEntries] = useState<StockEntryTransaction[]>([
-    {
-      id: "ENT-501",
-      invoiceNumber: "FAC-9921",
-      date: "Hoy, 10:30",
-      sku: "OIL-10W40",
-      productName: "Aceite Semi-Sintético 10W40 4L",
-      quantity: 15,
-      salePriceUpdated: 28000,
-    },
-    {
-      id: "ENT-502",
-      invoiceNumber: "FAC-1002",
-      date: "Ayer, 16:45",
-      sku: "FLT-OIL01",
-      productName: "Filtro de Aceite Blindado",
-      quantity: 20,
-      salePriceUpdated: 8500,
-    },
-  ]);
-
+  const [catalog, setCatalog] = useState<Product[]>([]);
+  const [isLoadingCatalog, setIsLoadingCatalog] = useState(true);
+  const [transactions, setTransactions] = useState<any[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [selectedVariantId, setSelectedVariantId] = useState<string>(INITIAL_CATALOG[0].variant_id);
+  const [selectedProductId, setSelectedProductId] = useState<string>("");
   const [invoiceNumber, setInvoiceNumber] = useState("");
   const [quantityInput, setQuantityInput] = useState<string>("10");
-  const [salePriceInput, setSalePriceInput] = useState<string>(INITIAL_CATALOG[0].current_price.toString());
+  const [costPriceInput, setCostPriceInput] = useState<string>("0"); // Nuevo campo
+  const [salePriceInput, setSalePriceInput] = useState<string>("0");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Al seleccionar repuesto, se pre-llena el Precio de Venta público desde el estado
-  const handleProductSelectChange = (variantId: string) => {
-    setSelectedVariantId(variantId);
-    const prod = catalog.find((p) => p.variant_id === variantId);
+  const loadData = async () => {
+    setIsLoadingCatalog(true);
+    const [prods, txs] = await Promise.all([
+      getProducts({ is_service: false }),
+      getAllInventoryTransactions(),
+    ]);
+    setCatalog(prods);
+    setTransactions(txs.filter((t) => t.type === "PURCHASE_IN" || t.type === "INITIAL_STOCK"));
+    if (prods.length > 0) {
+      setSelectedProductId(prods[0].id);
+      setSalePriceInput(prods[0].price.toString());
+      setCostPriceInput((prods[0].cost_price || 0).toString());
+    }
+    setIsLoadingCatalog(false);
+  };
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const handleProductSelectChange = (prodId: string) => {
+    setSelectedProductId(prodId);
+    const prod = catalog.find((p) => p.id === prodId);
     if (prod) {
-      setSalePriceInput(prod.current_price.toString());
+      setSalePriceInput(prod.price.toString());
+      setCostPriceInput((prod.cost_price || 0).toString());
     }
   };
 
-  const handleOpenModal = () => {
-    setSelectedVariantId(catalog[0].variant_id);
-    setSalePriceInput(catalog[0].current_price.toString());
-    setInvoiceNumber("");
-    setQuantityInput("10");
-    setIsModalOpen(true);
-  };
-
-  const handleSubmitEntry = (e: React.FormEvent) => {
+  const handleSubmitEntry = async (e: React.FormEvent) => {
     e.preventDefault();
-    const targetProduct = catalog.find((p) => p.variant_id === selectedVariantId);
-    if (!targetProduct) return;
+    if (!selectedProductId) return;
 
     const qty = parseInt(quantityInput, 10);
+    const costPrice = parseFloat(costPriceInput);
     const newPrice = parseFloat(salePriceInput);
 
     if (isNaN(qty) || qty <= 0) {
-      toast({ title: "Cantidad inválida", description: "Ingresa un número mayor a 0", type: "warning" });
+      toast({ title: "Cantidad inválida", description: "Ingresa un número mayor a 0.", type: "warning" });
       return;
     }
 
-    if (isNaN(newPrice) || newPrice <= 0) {
-      toast({ title: "Precio inválido", description: "Ingresa un precio de venta mayor a 0", type: "warning" });
+    if (isNaN(costPrice) || costPrice < 0) {
+      toast({ title: "Costo inválido", description: "El costo de compra no puede ser negativo.", type: "warning" });
       return;
     }
 
     setIsSubmitting(true);
+    const res = await registerStockEntry({
+      productId: selectedProductId,
+      quantity: qty,
+      referenceDocument: invoiceNumber || "FAC-RECEPCION",
+      newCostPrice: costPrice,
+      newSalePrice: newPrice,
+    });
+    setIsSubmitting(false);
 
-    setTimeout(() => {
-      // 1. Actualizar el sale_price en el catálogo
-      setCatalog((prev) =>
-        prev.map((p) => (p.variant_id === selectedVariantId ? { ...p, current_price: newPrice } : p))
-      );
+    if (!res.success) {
+      toast({ title: "Error en BD", description: res.error, type: "error" });
+      return;
+    }
 
-      // 2. Registrar el movimiento en inventory_transactions (type: 'PURCHASE_IN')
-      const newTransaction: StockEntryTransaction = {
-        id: `ENT-${500 + entries.length + 1}`,
-        invoiceNumber: invoiceNumber.trim() || "S/D",
-        date: "Hace un momento",
-        sku: targetProduct.sku,
-        productName: targetProduct.name,
-        quantity: qty,
-        salePriceUpdated: newPrice,
-      };
-
-      setEntries((prev) => [newTransaction, ...prev]);
-      setIsSubmitting(false);
-      setIsModalOpen(false);
-
-      toast({
-        title: "Entrada Registrada",
-        description: `Se sumaron ${qty} un. a ${targetProduct.sku}. Nuevo Precio Venta: $${newPrice.toLocaleString("es-CL")}`,
-        type: "success",
-      });
-    }, 400);
+    toast({ title: "Entrada Guardada en BD", description: `Recepción agregada y costo actualizado.`, type: "success" });
+    setIsModalOpen(false);
+    setInvoiceNumber("");
+    loadData();
   };
 
   return (
     <div className="flex flex-col gap-6">
-      {/* Cabecera */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Entradas de Stock (Recepción de Mercadería)</h1>
+          <h1 className="text-3xl font-bold tracking-tight">Entradas de Stock</h1>
           <p className="text-muted-foreground mt-1 text-sm">
-            Registro de recepciones físicas, actualización simultánea de precios de venta y control de stock (`PURCHASE_IN`).
+            Registro de recepciones físicas conectado con `inventory_transactions`.
           </p>
         </div>
         <div>
           <Button
             className="bg-primary text-primary-foreground hover:bg-primary/90 font-semibold shadow-sm"
-            onClick={handleOpenModal}
+            onClick={() => setIsModalOpen(true)}
+            disabled={catalog.length === 0}
           >
-            <Plus className="mr-2 h-4 w-4" />
-            Registrar Entrada de Stock
+            <Plus className="mr-2 h-4 w-4" /> Registrar Entrada de Stock
           </Button>
         </div>
       </div>
 
-      {/* Tabla Refactorizada conforme a SELECT inventory_transactions + product_variants + products */}
       <div className="rounded-xl border border-border bg-background/50 backdrop-blur-sm overflow-hidden">
         <Table>
           <TableHeader className="bg-muted/50">
             <TableRow className="border-border hover:bg-transparent">
-              <TableHead className="font-semibold">ID Recepción</TableHead>
-              <TableHead className="font-semibold">Nº Factura / Documento</TableHead>
+              <TableHead className="font-semibold">N° Documento</TableHead>
               <TableHead className="font-semibold">Fecha</TableHead>
               <TableHead className="font-semibold">SKU</TableHead>
               <TableHead className="font-semibold">Repuesto</TableHead>
-              <TableHead className="text-right font-semibold">Cantidad Ingresada</TableHead>
+              <TableHead className="text-right font-semibold">Cantidad</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {entries.length === 0 ? (
+            {isLoadingCatalog ? (
               <TableRow className="border-border">
-                <TableCell colSpan={6} className="h-32 text-center text-muted-foreground">
-                  No hay registros de entradas de stock disponibles.
+                <TableCell colSpan={5} className="h-32 text-center text-muted-foreground">
+                  <Loader2 className="h-5 w-5 animate-spin mx-auto text-primary" />
+                </TableCell>
+              </TableRow>
+            ) : transactions.length === 0 ? (
+              <TableRow className="border-border">
+                <TableCell colSpan={5} className="h-32 text-center text-muted-foreground">
+                  No hay registros de entradas de stock en Supabase.
                 </TableCell>
               </TableRow>
             ) : (
-              entries.map((entry) => (
-                <TableRow key={entry.id} className="border-border hover:bg-muted/30">
-                  <TableCell className="font-mono font-bold text-primary">{entry.id}</TableCell>
+              transactions.map((tx) => (
+                <TableRow key={tx.id} className="border-border hover:bg-muted/30">
                   <TableCell>
                     <span className="inline-flex items-center gap-1 font-mono text-xs bg-muted px-2 py-1 rounded border border-border text-foreground">
                       <FileText className="h-3 w-3 text-primary" />
-                      {entry.invoiceNumber}
+                      {tx.reference_document || "S/D"}
                     </span>
                   </TableCell>
-                  <TableCell className="text-muted-foreground text-xs">{entry.date}</TableCell>
-                  <TableCell className="font-mono text-xs font-semibold">{entry.sku}</TableCell>
-                  <TableCell>
-                    <div className="font-medium text-foreground text-sm">{entry.productName}</div>
-                    <div className="text-[11px] text-emerald-500 font-mono mt-0.5 flex items-center gap-1">
-                      <ArrowUpRight className="h-3 w-3" />
-                      Precio Venta Asignado: ${entry.salePriceUpdated.toLocaleString("es-CL")}
-                    </div>
+                  <TableCell className="text-muted-foreground text-xs">
+                    {new Date(tx.created_at).toLocaleString("es-CL")}
+                  </TableCell>
+                  <TableCell className="font-mono text-xs font-semibold">
+                    {tx.products?.sku || "S/K"}
+                  </TableCell>
+                  <TableCell className="font-medium text-foreground text-sm">
+                    {tx.products?.name || "Repuesto"}
                   </TableCell>
                   <TableCell className="text-right tabular-nums font-bold text-emerald-500">
-                    +{entry.quantity} un.
+                    +{tx.quantity} un.
                   </TableCell>
                 </TableRow>
               ))
@@ -204,26 +171,18 @@ export default function EntradasPage() {
         </Table>
       </div>
 
-      {/* Modal Rediseñado "Registrar Entrada de Stock" */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4">
-          <div className="bg-card border border-border rounded-xl p-6 max-w-lg w-full shadow-2xl flex flex-col gap-4 animate-in zoom-in-95 duration-150">
+          <div className="bg-card border border-border rounded-xl p-6 max-w-lg w-full shadow-2xl flex flex-col gap-4">
             <div className="flex items-center justify-between pb-3 border-b border-border">
               <div className="flex items-center gap-2">
                 <Truck className="h-5 w-5 text-primary" />
-                <h3 className="text-lg font-bold">Registrar Entrada de Stock</h3>
+                <h3 className="text-lg font-bold">Registrar Entrada de Stock en BD</h3>
               </div>
-              <button
-                onClick={() => setIsModalOpen(false)}
-                className="text-muted-foreground hover:text-foreground text-sm p-1"
-              >
-                ✕
-              </button>
             </div>
-
             <form onSubmit={handleSubmitEntry} className="flex flex-col gap-4">
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="invoice">Nº Factura / Boleta (`reference_document`)</Label>
+                <Label htmlFor="invoice">N° Factura / Boleta</Label>
                 <Input
                   id="invoice"
                   placeholder="Ej: FAC-8831"
@@ -232,62 +191,64 @@ export default function EntradasPage() {
                   required
                 />
               </div>
-
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="sku_select">Seleccionar Repuesto a Ingresar</Label>
+                <Label htmlFor="sku_select">Seleccionar Repuesto</Label>
                 <select
                   id="sku_select"
-                  className="flex h-9 w-full rounded-lg border border-input bg-background px-2.5 py-1 text-sm text-foreground outline-none focus-visible:border-ring"
-                  value={selectedVariantId}
+                  className="flex h-9 w-full rounded-lg border border-input bg-background px-2.5 py-1 text-sm text-foreground outline-none cursor-pointer"
+                  value={selectedProductId}
                   onChange={(e) => handleProductSelectChange(e.target.value)}
                 >
                   {catalog.map((p) => (
-                    <option key={p.variant_id} value={p.variant_id} className="bg-background text-foreground">
+                    <option key={p.id} value={p.id} className="bg-background text-foreground">
                       {p.sku} - {p.name}
                     </option>
                   ))}
                 </select>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-3 gap-3">
                 <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="quantity">Cantidad a Sumar (`current_stock`)</Label>
+                  <Label htmlFor="quantity">Cantidad *</Label>
                   <Input
                     id="quantity"
                     type="number"
-                    placeholder="10"
                     min="1"
                     value={quantityInput}
                     onChange={(e) => setQuantityInput(e.target.value)}
                     required
                   />
                 </div>
-
                 <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="sale_price">Precio de Venta público ($)</Label>
+                  <Label htmlFor="cost_price">Costo Compra ($) *</Label>
+                  <Input
+                    id="cost_price"
+                    type="number"
+                    min="0"
+                    value={costPriceInput}
+                    onChange={(e) => setCostPriceInput(e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="sale_price">Precio Venta ($) *</Label>
                   <Input
                     id="sale_price"
                     type="number"
-                    placeholder="28000"
+                    min="0"
                     value={salePriceInput}
                     onChange={(e) => setSalePriceInput(e.target.value)}
                     required
                   />
-                  <span className="text-[10px] text-muted-foreground">Pre-llenado con `sale_price` actual</span>
                 </div>
               </div>
 
               <div className="flex flex-row gap-2 pt-3 w-full border-t border-border mt-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="flex-1"
-                  onClick={() => setIsModalOpen(false)}
-                >
+                <Button type="button" variant="outline" className="flex-1" onClick={() => setIsModalOpen(false)}>
                   Cancelar
                 </Button>
                 <Button type="submit" className="flex-1 font-semibold" disabled={isSubmitting}>
-                  {isSubmitting ? "Guardando..." : "Guardar Entrada de Stock"}
+                  {isSubmitting ? "Procesando en BD..." : "Guardar en BD"}
                 </Button>
               </div>
             </form>
